@@ -135,11 +135,44 @@ p3 <- ggplot(obj_filtered@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
 ggsave(file.path(outdir, "03_scatter_post_filter.png"), p3,
        width = 7, height = 6, dpi = dpi)
 
-# 3.4 Violin post-filtering
-p4 <- VlnPlot(obj_filtered, features = c("nFeature_RNA", "nCount_RNA"),
-              ncol = 2, pt.size = 0) & theme_pub() & NoLegend()
-ggsave(file.path(outdir, "04_violin_post_filter.png"), p4,
-       width = 10, height = 5, dpi = dpi)
+# 3.4 Violin pre vs post — all QC metrics
+pre_meta  <- obj@meta.data
+pre_meta$filtering <- "Pre-filtering"
+post_meta <- obj_filtered@meta.data
+post_meta$filtering <- "Post-filtering"
+violin_df <- rbind(
+  pre_meta[, c("nCount_RNA", "nFeature_RNA", "log10GenesPerUMI",
+               "percent.ribo", "percent.chloro", "percent.stress", "filtering")],
+  post_meta[, c("nCount_RNA", "nFeature_RNA", "log10GenesPerUMI",
+                "percent.ribo", "percent.chloro", "percent.stress", "filtering")]
+)
+violin_df$filtering <- factor(violin_df$filtering, levels = c("Pre-filtering", "Post-filtering"))
+
+metric_labels <- c(
+  nCount_RNA = "nCount_RNA", nFeature_RNA = "nFeature_RNA",
+  log10GenesPerUMI = "Complexity", percent.ribo = "% Ribosomal",
+  percent.chloro = "% Chloroplast", percent.stress = "% Stress"
+)
+
+violin_plots <- list()
+for (m in names(metric_labels)) {
+  violin_plots[[m]] <- ggplot(violin_df, aes(x = filtering, y = .data[[m]], fill = filtering)) +
+    geom_violin(scale = "width", alpha = 0.7, linewidth = 0.3) +
+    geom_boxplot(width = 0.15, outlier.size = 0.3, alpha = 0.8) +
+    scale_fill_manual(values = c("Pre-filtering" = "grey70", "Post-filtering" = "steelblue")) +
+    labs(title = metric_labels[[m]], x = "", y = "") +
+    theme_pub() + NoLegend()
+}
+
+# Log scale for nCount and nFeature
+violin_plots[["nCount_RNA"]] <- violin_plots[["nCount_RNA"]] + scale_y_log10()
+violin_plots[["nFeature_RNA"]] <- violin_plots[["nFeature_RNA"]] + scale_y_log10()
+
+p4 <- wrap_plots(violin_plots, ncol = 3) +
+  plot_annotation(title = sprintf("QC metrics — pre (%d cells) vs post (%d cells) filtering",
+                                  ncol(obj), ncol(obj_filtered)))
+ggsave(file.path(outdir, "04_violin_pre_vs_post.png"), p4,
+       width = 12, height = 8, dpi = dpi)
 
 
 ##=============================================================================
