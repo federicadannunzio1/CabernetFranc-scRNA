@@ -145,14 +145,77 @@ cat(sprintf("Cellule: %d (da %d, rimosso %.1f%%)\n",
             100 * (1 - ncol(obj_filtered) / ncol(obj))))
 cat(sprintf("Geni: %d\n", nrow(obj_filtered)))
 
-qc_summary <- function(x, name) {
-  cat(sprintf("  %-20s min=%-8.1f Q1=%-8.1f median=%-8.1f Q3=%-8.1f max=%-8.1f\n",
-              name, min(x), quantile(x, 0.25), median(x), quantile(x, 0.75), max(x)))
+# Helper
+has_meta <- function(obj, col) col %in% colnames(obj@meta.data)
+
+# --- Tabella riepilogativa pre vs post filtraggio ---
+calc_stats <- function(x) {
+  c(min = min(x, na.rm = TRUE), Q1 = unname(quantile(x, 0.25, na.rm = TRUE)),
+    median = median(x, na.rm = TRUE), Q3 = unname(quantile(x, 0.75, na.rm = TRUE)),
+    max = max(x, na.rm = TRUE))
 }
 
-qc_summary(obj_filtered$nCount_RNA, "nCount_RNA")
-qc_summary(obj_filtered$nFeature_RNA, "nFeature_RNA")
-qc_summary(obj_filtered$log10GenesPerUMI, "log10GenesPerUMI")
+metrics <- c("nCount_RNA", "nFeature_RNA", "log10GenesPerUMI")
+if (has_meta(obj, "percent.ribo"))   metrics <- c(metrics, "percent.ribo")
+if (has_meta(obj, "percent.chloro")) metrics <- c(metrics, "percent.chloro")
+if (has_meta(obj, "percent.stress")) metrics <- c(metrics, "percent.stress")
+
+pre_rows  <- list()
+post_rows <- list()
+for (m in metrics) {
+  pre_rows[[m]]  <- calc_stats(obj@meta.data[[m]])
+  post_rows[[m]] <- calc_stats(obj_filtered@meta.data[[m]])
+}
+
+summary_table <- data.frame(
+  metrica     = rep(metrics, each = 1),
+  pre_min     = sapply(pre_rows, `[`, "min"),
+  pre_Q1      = sapply(pre_rows, `[`, "Q1"),
+  pre_median  = sapply(pre_rows, `[`, "median"),
+  pre_Q3      = sapply(pre_rows, `[`, "Q3"),
+  pre_max     = sapply(pre_rows, `[`, "max"),
+  post_min    = sapply(post_rows, `[`, "min"),
+  post_Q1     = sapply(post_rows, `[`, "Q1"),
+  post_median = sapply(post_rows, `[`, "median"),
+  post_Q3     = sapply(post_rows, `[`, "Q3"),
+  post_max    = sapply(post_rows, `[`, "max"),
+  row.names   = NULL
+)
+
+# Aggiungi riga con conteggi cellule e geni
+counts_row <- data.frame(
+  metrica = c("Cellule", "Geni"),
+  pre_min = c(ncol(obj), nrow(obj)),
+  pre_Q1 = NA, pre_median = NA, pre_Q3 = NA, pre_max = NA,
+  post_min = c(ncol(obj_filtered), nrow(obj_filtered)),
+  post_Q1 = NA, post_median = NA, post_Q3 = NA, post_max = NA
+)
+
+summary_table <- rbind(counts_row, summary_table)
+
+# Stampa a console
+cat("\n=== TABELLA RIEPILOGATIVA PRE vs POST FILTRAGGIO ===\n\n")
+cat(sprintf("  %-20s | %10s %10s %10s %10s %10s | %10s %10s %10s %10s %10s\n",
+            "", "PRE_min", "PRE_Q1", "PRE_med", "PRE_Q3", "PRE_max",
+            "POST_min", "POST_Q1", "POST_med", "POST_Q3", "POST_max"))
+cat(paste(rep("-", 135), collapse = ""), "\n")
+for (i in seq_len(nrow(summary_table))) {
+  row <- summary_table[i, ]
+  if (row$metrica %in% c("Cellule", "Geni")) {
+    cat(sprintf("  %-20s | %10.0f %10s %10s %10s %10s | %10.0f %10s %10s %10s %10s\n",
+                row$metrica, row$pre_min, "", "", "", "",
+                row$post_min, "", "", "", ""))
+  } else {
+    cat(sprintf("  %-20s | %10.1f %10.1f %10.1f %10.1f %10.1f | %10.1f %10.1f %10.1f %10.1f %10.1f\n",
+                row$metrica,
+                row$pre_min, row$pre_Q1, row$pre_median, row$pre_Q3, row$pre_max,
+                row$post_min, row$post_Q1, row$post_median, row$post_Q3, row$post_max))
+  }
+}
+cat("\n")
+
+# Salva tabella come CSV
+write.csv(summary_table, file.path(outdir, "summary_pre_vs_post.csv"), row.names = FALSE)
 
 
 ##=============================================================================
