@@ -30,6 +30,7 @@ cr_outs      <- file.path(proj, "03_scRNA/01_alignment/VvProt_scRNA/outs")
 filtered_dir <- file.path(cr_outs, "filtered_feature_bc_matrix")
 raw_dir      <- file.path(cr_outs, "raw_feature_bc_matrix")
 annot_file   <- file.path(proj, "01_reference/5.1_on_T2T_ref_functional_annotation_summary_with_coordinates.tsv")
+equiv_file   <- file.path(proj, "01_reference/all_on_T2T_ref_equivalences_filtered_no_copies_symbols.csv")
 
 # Helper: controlla se una colonna esiste nei metadata
 has_meta <- function(obj, col) col %in% colnames(obj@meta.data)
@@ -386,26 +387,51 @@ gene_totals <- sort(Matrix::rowSums(counts_mat), decreasing = TRUE)
 total_umi <- sum(gene_totals)
 top30 <- head(gene_totals, 30)
 
-# Aggiunge descrizione dall'annotazione
+# Carica tabella equivalenze Grapedia per i nomi dei geni
+equiv <- tryCatch(
+  read.delim(equiv_file, header = TRUE, stringsAsFactors = FALSE),
+  error = function(e) { cat("NOTA: file equivalenze non trovato, uso eggNOG.\n"); NULL }
+)
+
+# Funzione per trovare il nome di un gene
+get_gene_label <- function(gene_seurat, equiv, annot) {
+  gid <- gsub("-", "_", gene_seurat)
+  # Prima cerca Grapedia_Name nella tabella equivalenze
+  if (!is.null(equiv)) {
+    idx <- match(gid, equiv$target_id)
+    if (!is.na(idx) && nchar(equiv$T2T.v5.1_gene_symbol[idx]) > 0) {
+      return(equiv$T2T.v5.1_gene_symbol[idx])
+    }
+  }
+  # Fallback: eggNOG dall'annotazione funzionale
+  idx <- match(gid, annot$gene)
+  if (!is.na(idx) && nchar(annot$eggNOG[idx]) > 0) {
+    return(substr(annot$eggNOG[idx], 1, 40))
+  }
+  return("")
+}
+
+# Aggiunge Grapedia_Name o descrizione dall'annotazione
 cat("\n=== TOP 30 GENI PIU' ESPRESSI ===\n")
 for (i in seq_along(top30)) {
   gname <- names(top30)[i]
-  # Cerca nell'annotazione (riconverti - in _ per il match)
-  gid_orig <- gsub("-", "_", gname)
-  desc <- ""
-  idx <- match(gid_orig, annot$gene)
-  if (!is.na(idx)) desc <- substr(annot$eggNOG[idx], 1, 50)
+  label <- get_gene_label(gname, equiv, annot)
   cat(sprintf("  %2d. %-30s %10d UMI (%.2f%%)  %s\n",
-              i, gname, top30[i], 100 * top30[i] / total_umi, desc))
+              i, gname, top30[i], 100 * top30[i] / total_umi, label))
 }
 
 top_pct <- cumsum(top30) / total_umi * 100
 cat(sprintf("\n  Top 10 geni: %.1f%% UMI totali\n", top_pct[10]))
 cat(sprintf("  Top 30 geni: %.1f%% UMI totali\n", top_pct[30]))
 
-# Plot top 30
+# Plot top 30 — usa Grapedia_Name quando disponibile
+top30_labels <- sapply(names(top30), function(g) {
+  lab <- get_gene_label(g, equiv, annot)
+  if (nchar(lab) > 0) paste0(g, " (", lab, ")") else g
+})
+
 top30_df <- data.frame(
-  gene = factor(names(top30), levels = rev(names(top30))),
+  gene = factor(top30_labels, levels = rev(top30_labels)),
   total_umi = as.numeric(top30),
   pct = 100 * as.numeric(top30) / total_umi
 )
