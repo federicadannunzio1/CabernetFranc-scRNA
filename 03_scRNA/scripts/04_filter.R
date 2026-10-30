@@ -214,8 +214,60 @@ for (i in seq_len(nrow(summary_table))) {
 }
 cat("\n")
 
-# Salva tabella come CSV
+# Salva tabella come CSV e XLSX
 write.csv(summary_table, file.path(outdir, "summary_pre_vs_post.csv"), row.names = FALSE)
+
+if (requireNamespace("openxlsx", quietly = TRUE)) {
+  library(openxlsx)
+  wb <- createWorkbook()
+
+  # Foglio 1: Riepilogo pre vs post
+  addWorksheet(wb, "Pre vs Post")
+  writeData(wb, "Pre vs Post", summary_table)
+  headerStyle <- createStyle(textDecoration = "bold", border = "bottom")
+  addStyle(wb, "Pre vs Post", headerStyle, rows = 1, cols = 1:ncol(summary_table))
+  setColWidths(wb, "Pre vs Post", cols = 1:ncol(summary_table), widths = "auto")
+
+  # Foglio 2: Soglie applicate
+  soglie_df <- data.frame(
+    Filtro = c("nCount_RNA", "nFeature_RNA", "log10GenesPerUMI", "scDblFinder", "SoupX"),
+    Soglia_min = c(NCOUNT_MIN, NFEATURE_MIN, COMPLEXITY, NA, NA),
+    Soglia_max = c(NCOUNT_MAX, NFEATURE_MAX, NA, NA, NA),
+    Metodo = c("3 MAD (log10)", "3 MAD (log10)", "Standard", "scDblFinder", "SoupX v1.6.2"),
+    Note = c("UMI per cellula", "Geni rilevati per cellula",
+             "Complessita trascrizionale", "class == singlet, threshold 0.414",
+             "Contaminazione stimata 2.9%")
+  )
+  addWorksheet(wb, "Soglie applicate")
+  writeData(wb, "Soglie applicate", soglie_df)
+  addStyle(wb, "Soglie applicate", headerStyle, rows = 1, cols = 1:ncol(soglie_df))
+  setColWidths(wb, "Soglie applicate", cols = 1:ncol(soglie_df), widths = "auto")
+
+  # Foglio 3: Conteggi filtraggio
+  filter_counts <- data.frame(
+    Descrizione = c("Cellule pre-filtraggio",
+                    "Escluse per nCount basso", "Escluse per nCount alto",
+                    "Escluse per nFeature basso", "Escluse per nFeature alto",
+                    "Escluse per bassa complessita", "Escluse come doublet",
+                    "Cellule post-filtraggio", "Geni post-filtraggio"),
+    Valore = c(ncol(obj),
+               sum(obj$nCount_RNA < NCOUNT_MIN), sum(obj$nCount_RNA > NCOUNT_MAX),
+               sum(obj$nFeature_RNA < NFEATURE_MIN), sum(obj$nFeature_RNA > NFEATURE_MAX),
+               sum(obj$log10GenesPerUMI <= COMPLEXITY),
+               sum(obj$scDblFinder.class == "doublet"),
+               ncol(obj_filtered), nrow(obj_filtered))
+  )
+  addWorksheet(wb, "Conteggi filtraggio")
+  writeData(wb, "Conteggi filtraggio", filter_counts)
+  addStyle(wb, "Conteggi filtraggio", headerStyle, rows = 1, cols = 1:ncol(filter_counts))
+  setColWidths(wb, "Conteggi filtraggio", cols = 1:ncol(filter_counts), widths = "auto")
+
+  saveWorkbook(wb, file.path(outdir, "QC_filtering_summary.xlsx"), overwrite = TRUE)
+  cat("Tabella XLSX salvata: QC_filtering_summary.xlsx\n")
+} else {
+  cat("NOTA: pacchetto openxlsx non disponibile, XLSX non generato.\n")
+  cat("Per installarlo: install.packages('openxlsx')\n")
+}
 
 
 ##=============================================================================
