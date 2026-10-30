@@ -87,33 +87,33 @@ cat("\n=== 3. Plot confronto prima/dopo ===\n")
 dpi <- 300
 
 # 3.1 Densita' nCount prima/dopo
-pre_df  <- data.frame(nCount = obj$nCount_RNA, stato = "Pre-filtraggio")
-post_df <- data.frame(nCount = obj_filtered$nCount_RNA, stato = "Post-filtraggio")
+pre_df  <- data.frame(nCount = obj$nCount_RNA, stato = "Pre-filtering")
+post_df <- data.frame(nCount = obj_filtered$nCount_RNA, stato = "Post-filtering")
 df_count <- rbind(pre_df, post_df)
 
 p1 <- ggplot(df_count, aes(x = nCount, fill = stato)) +
   geom_density(alpha = 0.4) +
   scale_x_log10() +
-  scale_fill_manual(values = c("Pre-filtraggio" = "grey60", "Post-filtraggio" = "steelblue")) +
+  scale_fill_manual(values = c("Pre-filtering" = "grey60", "Post-filtering" = "steelblue")) +
   geom_vline(xintercept = c(NCOUNT_MIN, NCOUNT_MAX), linetype = "dashed", color = "red") +
-  labs(title = "Distribuzione UMI — prima vs dopo filtraggio",
-       x = "nCount_RNA (log10)", y = "Densita'", fill = "") +
+  labs(title = "UMI distribution — pre vs post filtering",
+       x = "nCount_RNA (log10)", y = "Density", fill = "") +
   theme_minimal()
 ggsave(file.path(outdir, "01_density_nCount_pre_post.png"), p1,
        width = 8, height = 5, dpi = dpi)
 
 # 3.2 Densita' nFeature prima/dopo
-pre_df2  <- data.frame(nFeature = obj$nFeature_RNA, stato = "Pre-filtraggio")
-post_df2 <- data.frame(nFeature = obj_filtered$nFeature_RNA, stato = "Post-filtraggio")
+pre_df2  <- data.frame(nFeature = obj$nFeature_RNA, stato = "Pre-filtering")
+post_df2 <- data.frame(nFeature = obj_filtered$nFeature_RNA, stato = "Post-filtering")
 df_feat <- rbind(pre_df2, post_df2)
 
 p2 <- ggplot(df_feat, aes(x = nFeature, fill = stato)) +
   geom_density(alpha = 0.4) +
   scale_x_log10() +
-  scale_fill_manual(values = c("Pre-filtraggio" = "grey60", "Post-filtraggio" = "coral")) +
+  scale_fill_manual(values = c("Pre-filtering" = "grey60", "Post-filtering" = "coral")) +
   geom_vline(xintercept = c(NFEATURE_MIN, NFEATURE_MAX), linetype = "dashed", color = "red") +
-  labs(title = "Distribuzione geni — prima vs dopo filtraggio",
-       x = "nFeature_RNA (log10)", y = "Densita'", fill = "") +
+  labs(title = "Gene distribution — pre vs post filtering",
+       x = "nFeature_RNA (log10)", y = "Density", fill = "") +
   theme_minimal()
 ggsave(file.path(outdir, "02_density_nFeature_pre_post.png"), p2,
        width = 8, height = 5, dpi = dpi)
@@ -122,7 +122,7 @@ ggsave(file.path(outdir, "02_density_nFeature_pre_post.png"), p2,
 p3 <- ggplot(obj_filtered@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
   geom_point(size = 0.2, alpha = 0.2, color = "steelblue") +
   scale_x_log10() + scale_y_log10() +
-  labs(title = sprintf("nCount vs nFeature post-filtraggio (%d cellule)", ncol(obj_filtered)),
+  labs(title = sprintf("nCount vs nFeature post-filtering (%d cells)", ncol(obj_filtered)),
        x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)") +
   theme_minimal()
 ggsave(file.path(outdir, "03_scatter_post_filter.png"), p3,
