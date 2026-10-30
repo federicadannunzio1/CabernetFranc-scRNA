@@ -3,20 +3,21 @@
 .Rhistory
 .RData
 
+# Documenti locali
+*.docx
+*.xlsx
+*.txt
+!03_scRNA/scripts/*.txt
+
 # Dati pesanti (restano solo in locale/cluster)
 00_raw_data/
 01_reference/
 02_bulk_results/
 
-# Output analisi (pesanti, restano sul cluster)
-03_scRNA/01_alignment/*.bam
-03_scRNA/01_alignment/*.bam.bai
-03_scRNA/01_alignment/*.h5
-03_scRNA/01_alignment/filtered_feature_bc_matrix/
-03_scRNA/01_alignment/raw_feature_bc_matrix/
-03_scRNA/01_alignment/analysis/
-03_scRNA/01_alignment/cloupe.cloupe
-03_scRNA/01_alignment/molecule_info.h5
+# Output analisi (restano in locale, non su GitHub)
+03_scRNA/01_alignment/
+03_scRNA/02_qc/*.png
+03_scRNA/02_qc/*.csv
 03_scRNA/02_qc/*.rds
 03_scRNA/03_filtering/*.rds
 03_scRNA/04_analysis/*.rds
