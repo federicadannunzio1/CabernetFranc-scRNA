@@ -21,6 +21,13 @@ library(patchwork)
 
 set.seed(42)
 
+# Custom theme: black axes, no grid
+theme_pub <- function() {
+  theme_classic() %+replace%
+    theme(axis.line = element_line(color = "black", linewidth = 0.5),
+          axis.ticks = element_line(color = "black", linewidth = 0.4))
+}
+
 # --- Paths ----
 proj   <- "/lustre/home/dcapozzi/projects/scRNA_protoplasts"
 outdir <- file.path(proj, "03_scRNA/02_qc")
@@ -236,7 +243,7 @@ cat("\n=== 7. Generazione plot ===\n")
 
 # 7.1 Violin nFeature e nCount
 p_vln <- VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA"),
-                 ncol = 2, pt.size = 0) & theme_minimal() & NoLegend()
+                 ncol = 2, pt.size = 0) & theme_pub() & NoLegend()
 ggsave(file.path(outdir, "01_violin_nFeature_nCount.png"), p_vln,
        width = 10, height = 5, dpi = 300)
 
@@ -248,7 +255,7 @@ if (has_meta(obj, "percent.stress")) extra_features <- c(extra_features, "percen
 
 p_vln2 <- VlnPlot(obj, features = extra_features,
                    ncol = length(extra_features), pt.size = 0) &
-  theme_minimal() & NoLegend()
+  theme_pub() & NoLegend()
 ggsave(file.path(outdir, "02_violin_complexity_extra.png"), p_vln2,
        width = 5 * length(extra_features), height = 5, dpi = 300)
 
@@ -258,7 +265,7 @@ p_scatter1 <- ggplot(obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
   scale_x_log10() + scale_y_log10() +
   geom_smooth(method = "loess", se = FALSE, color = "dodgerblue", linewidth = 0.7) +
   labs(title = "nCount vs nFeature (log-log)", x = "Total UMI", y = "Genes detected") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "03_scatter_count_vs_feature.png"), p_scatter1,
        width = 7, height = 6, dpi = 300)
 
@@ -272,7 +279,7 @@ p_dens1 <- ggplot(obj@meta.data, aes(x = nCount_RNA)) +
   annotate("text", x = nCount_hi, y = Inf, label = sprintf("%.0f", nCount_hi),
            vjust = 2, hjust = -0.1, color = "red", size = 3) +
   labs(title = "UMI distribution per cell", x = "nCount_RNA (log10)", y = "Density") +
-  theme_minimal()
+  theme_pub()
 
 p_dens2 <- ggplot(obj@meta.data, aes(x = nFeature_RNA)) +
   geom_density(fill = "coral", alpha = 0.5) +
@@ -283,7 +290,7 @@ p_dens2 <- ggplot(obj@meta.data, aes(x = nFeature_RNA)) +
   annotate("text", x = nFeature_hi, y = Inf, label = sprintf("%.0f", nFeature_hi),
            vjust = 2, hjust = -0.1, color = "red", size = 3) +
   labs(title = "Gene distribution per cell", x = "nFeature_RNA (log10)", y = "Density") +
-  theme_minimal()
+  theme_pub()
 
 p_dens <- p_dens1 + p_dens2
 ggsave(file.path(outdir, "04_density_count_feature.png"), p_dens,
@@ -295,7 +302,7 @@ p_complex <- ggplot(obj@meta.data, aes(x = log10GenesPerUMI)) +
   geom_vline(xintercept = 0.80, linetype = "dashed", color = "red") +
   labs(title = "Transcriptional complexity",
        x = "log10(Genes)/log10(UMI)", y = "Density") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "05_density_complexity.png"), p_complex,
        width = 6, height = 5, dpi = 300)
 
@@ -309,7 +316,7 @@ p_thresh <- ggplot(obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
        subtitle = sprintf("nCount [%.0f-%.0f], nFeature [%.0f-%.0f]",
                           nCount_lo, nCount_hi, nFeature_lo, nFeature_hi),
        x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "06_scatter_thresholds.png"), p_thresh,
        width = 8, height = 7, dpi = 300)
 
@@ -320,7 +327,7 @@ p_sc_compl <- ggplot(obj@meta.data, aes(x = nCount_RNA, y = log10GenesPerUMI)) +
   geom_hline(yintercept = 0.80, linetype = "dashed", color = "red") +
   labs(title = "UMI vs Complexity",
        x = "nCount_RNA (log10)", y = "log10GenesPerUMI") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "07_scatter_count_vs_complexity.png"), p_sc_compl,
        width = 7, height = 6, dpi = 300)
 
@@ -331,7 +338,7 @@ if (has_meta(obj, "percent.stress")) {
     scale_x_log10() +
     labs(title = "UMI vs % stress/protoplastization genes",
          x = "nCount_RNA (log10)", y = "% UMI stress genes") +
-    theme_minimal()
+    theme_pub()
   ggsave(file.path(outdir, "08_scatter_stress.png"), p_stress,
          width = 7, height = 6, dpi = 300)
 }
@@ -343,7 +350,7 @@ if (has_meta(obj, "percent.chloro")) {
     scale_x_log10() +
     labs(title = "UMI vs % plastid/photosynthetic genes",
          x = "nCount_RNA (log10)", y = "% UMI chloroplast genes") +
-    theme_minimal()
+    theme_pub()
   ggsave(file.path(outdir, "09_scatter_chloroplast.png"), p_chloro,
          width = 7, height = 6, dpi = 300)
 }
@@ -354,7 +361,7 @@ p_dbl_dens <- ggplot(obj@meta.data, aes(x = scDblFinder.score, fill = scDblFinde
   scale_fill_manual(values = c("singlet" = "steelblue", "doublet" = "red")) +
   labs(title = "Doublet score distribution (scDblFinder)",
        x = "Doublet score", y = "Density", fill = "Class") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "10_density_doublet_score.png"), p_dbl_dens,
        width = 7, height = 5, dpi = 300)
 
@@ -366,14 +373,14 @@ p_dbl_scatter <- ggplot(obj@meta.data,
   scale_color_manual(values = c("singlet" = "grey60", "doublet" = "red")) +
   labs(title = "nCount vs nFeature — doublets highlighted",
        x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)", color = "Class") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "11_scatter_doublets.png"), p_dbl_scatter,
        width = 8, height = 7, dpi = 300)
 
 # 7.12 Violin singlet vs doublet
 p_dbl_violin <- VlnPlot(obj, features = c("nCount_RNA", "nFeature_RNA"),
                          group.by = "scDblFinder.class", ncol = 2, pt.size = 0) &
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "12_violin_singlet_vs_doublet.png"), p_dbl_violin,
        width = 10, height = 5, dpi = 300)
 
@@ -440,7 +447,7 @@ p_top <- ggplot(top30_df, aes(x = total_umi, y = gene)) +
   geom_text(aes(label = sprintf("%.1f%%", pct)), hjust = -0.1, size = 2.5) +
   scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
   labs(title = "Top 30 most expressed genes (total UMI)", x = "Total UMI", y = "") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "13_top30_genes.png"), p_top, width = 9, height = 8, dpi = 300)
 
 # % cellule che esprimono i top 10
@@ -460,7 +467,7 @@ p_hist <- ggplot(obj@meta.data, aes(x = nFeature_RNA)) +
   geom_histogram(bins = 100, fill = "grey40", color = "white") +
   geom_vline(xintercept = c(nFeature_lo, nFeature_hi), linetype = "dashed", color = "red") +
   labs(title = "Genes per cell histogram", x = "nFeature_RNA", y = "Number of cells") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "14_histogram_nFeature.png"), p_hist,
        width = 7, height = 5, dpi = 300)
 

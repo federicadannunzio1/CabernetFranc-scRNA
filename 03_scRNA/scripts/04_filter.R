@@ -19,6 +19,13 @@ library(patchwork)
 
 set.seed(42)
 
+# Custom theme: black axes, no grid
+theme_pub <- function() {
+  theme_classic() %+replace%
+    theme(axis.line = element_line(color = "black", linewidth = 0.5),
+          axis.ticks = element_line(color = "black", linewidth = 0.4))
+}
+
 # --- Paths ----
 proj    <- "/lustre/home/dcapozzi/projects/scRNA_protoplasts"
 indir   <- file.path(proj, "03_scRNA/02_qc")
@@ -98,7 +105,7 @@ p1 <- ggplot(df_count, aes(x = nCount, fill = stato)) +
   geom_vline(xintercept = c(NCOUNT_MIN, NCOUNT_MAX), linetype = "dashed", color = "red") +
   labs(title = "UMI distribution — pre vs post filtering",
        x = "nCount_RNA (log10)", y = "Density", fill = "") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "01_density_nCount_pre_post.png"), p1,
        width = 8, height = 5, dpi = dpi)
 
@@ -114,7 +121,7 @@ p2 <- ggplot(df_feat, aes(x = nFeature, fill = stato)) +
   geom_vline(xintercept = c(NFEATURE_MIN, NFEATURE_MAX), linetype = "dashed", color = "red") +
   labs(title = "Gene distribution — pre vs post filtering",
        x = "nFeature_RNA (log10)", y = "Density", fill = "") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "02_density_nFeature_pre_post.png"), p2,
        width = 8, height = 5, dpi = dpi)
 
@@ -124,13 +131,13 @@ p3 <- ggplot(obj_filtered@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
   scale_x_log10() + scale_y_log10() +
   labs(title = sprintf("nCount vs nFeature post-filtering (%d cells)", ncol(obj_filtered)),
        x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)") +
-  theme_minimal()
+  theme_pub()
 ggsave(file.path(outdir, "03_scatter_post_filter.png"), p3,
        width = 7, height = 6, dpi = dpi)
 
 # 3.4 Violin post-filtering
 p4 <- VlnPlot(obj_filtered, features = c("nFeature_RNA", "nCount_RNA"),
-              ncol = 2, pt.size = 0) & theme_minimal() & NoLegend()
+              ncol = 2, pt.size = 0) & theme_pub() & NoLegend()
 ggsave(file.path(outdir, "04_violin_post_filter.png"), p4,
        width = 10, height = 5, dpi = dpi)
 
