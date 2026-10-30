@@ -416,7 +416,7 @@ cat("\n=== TOP 30 GENI PIU' ESPRESSI ===\n")
 for (i in seq_along(top30)) {
   gname <- names(top30)[i]
   label <- get_gene_label(gname, equiv, annot)
-  cat(sprintf("  %2d. %-30s %10d UMI (%.2f%%)  %s\n",
+  cat(sprintf("  %2d. %-30s %10.0f UMI (%.2f%%)  %s\n",
               i, gname, top30[i], 100 * top30[i] / total_umi, label))
 }
 
