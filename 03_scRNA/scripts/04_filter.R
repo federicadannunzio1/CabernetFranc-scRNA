@@ -1,16 +1,16 @@
 ##=============================================================================
-## FASE 3+4 (parte 2): Filtraggio — applica soglie QC e rimuove doublet
+## PHASE 3+4 (part 2): Filtering — apply QC thresholds and remove doublets
 ##
-## Input:  03_scRNA/02_qc/VvProt_prefilter.rds (SoupX corretto, con doublet score)
-## Output: 03_scRNA/03_filtering/VvProt_filtered.rds (pronto per normalizzazione)
+## Input:  03_scRNA/02_qc/VvProt_prefilter.rds (SoupX corrected, with doublet score)
+## Output: 03_scRNA/03_filtering/VvProt_filtered.rds (ready for normalization)
 ##
-## Soglie decise dopo valutazione dei plot QC:
+## Thresholds determined after QC plot evaluation:
 ##   nCount_RNA:       [1313 — 57924]   (3 MAD su log10)
 ##   nFeature_RNA:     [748 — 8568]     (3 MAD su log10)
 ##   log10GenesPerUMI: > 0.80
 ##   scDblFinder:      class == "singlet"
 ##
-## Eseguire su TeraStat2: sbatch 04_filter.slurm
+## Run on TeraStat2: sbatch 04_filter.slurm
 ##=============================================================================
 
 library(Seurat)
@@ -25,7 +25,7 @@ indir   <- file.path(proj, "03_scRNA/02_qc")
 outdir  <- file.path(proj, "03_scRNA/03_filtering")
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-# --- Soglie ----
+# --- Thresholds ----
 NCOUNT_MIN   <- 1313
 NCOUNT_MAX   <- 57924
 NFEATURE_MIN <- 748
@@ -34,59 +34,59 @@ COMPLEXITY   <- 0.80
 
 
 ##=============================================================================
-## 1. CARICA OGGETTO PRE-FILTRAGGIO
+## 1. LOAD PRE-FILTERING OBJECT
 ##=============================================================================
 
-cat("=== 1. Caricamento oggetto pre-filtraggio ===\n")
+cat("=== 1. Loading pre-filtering object ===\n")
 obj <- readRDS(file.path(indir, "VvProt_prefilter.rds"))
-cat(sprintf("Cellule pre-filtraggio: %d\n", ncol(obj)))
-cat(sprintf("Geni: %d\n", nrow(obj)))
+cat(sprintf("Cells pre-filtering: %d\n", ncol(obj)))
+cat(sprintf("Genes: %d\n", nrow(obj)))
 
 
 ##=============================================================================
-## 2. APPLICA FILTRI
+## 2. APPLY FILTERS
 ##=============================================================================
 
-cat("\n=== 2. Applicazione filtri ===\n")
+cat("\n=== 2. Applying filters ===\n")
 
-# Etichetta ogni cellula con il motivo di esclusione
+# Label each cell with exclusion reason
 obj[["pass_nCount"]]   <- obj$nCount_RNA >= NCOUNT_MIN & obj$nCount_RNA <= NCOUNT_MAX
 obj[["pass_nFeature"]] <- obj$nFeature_RNA >= NFEATURE_MIN & obj$nFeature_RNA <= NFEATURE_MAX
 obj[["pass_complex"]]  <- obj$log10GenesPerUMI > COMPLEXITY
 obj[["pass_singlet"]]  <- obj$scDblFinder.class == "singlet"
 obj[["pass_all"]]      <- obj$pass_nCount & obj$pass_nFeature & obj$pass_complex & obj$pass_singlet
 
-# Report dettagliato
-cat(sprintf("  Escluse per nCount < %d:        %d\n", NCOUNT_MIN, sum(obj$nCount_RNA < NCOUNT_MIN)))
-cat(sprintf("  Escluse per nCount > %d:       %d\n", NCOUNT_MAX, sum(obj$nCount_RNA > NCOUNT_MAX)))
-cat(sprintf("  Escluse per nFeature < %d:       %d\n", NFEATURE_MIN, sum(obj$nFeature_RNA < NFEATURE_MIN)))
-cat(sprintf("  Escluse per nFeature > %d:      %d\n", NFEATURE_MAX, sum(obj$nFeature_RNA > NFEATURE_MAX)))
-cat(sprintf("  Escluse per complessita' < %.2f:  %d\n", COMPLEXITY, sum(obj$log10GenesPerUMI <= COMPLEXITY)))
-cat(sprintf("  Escluse come doublet:            %d\n", sum(obj$scDblFinder.class == "doublet")))
-cat(sprintf("  Cellule che passano TUTTI:       %d / %d (%.1f%%)\n",
+# Detailed report
+cat(sprintf("  Excluded for nCount < %d:        %d\n", NCOUNT_MIN, sum(obj$nCount_RNA < NCOUNT_MIN)))
+cat(sprintf("  Excluded for nCount > %d:       %d\n", NCOUNT_MAX, sum(obj$nCount_RNA > NCOUNT_MAX)))
+cat(sprintf("  Excluded for nFeature < %d:       %d\n", NFEATURE_MIN, sum(obj$nFeature_RNA < NFEATURE_MIN)))
+cat(sprintf("  Excluded for nFeature > %d:      %d\n", NFEATURE_MAX, sum(obj$nFeature_RNA > NFEATURE_MAX)))
+cat(sprintf("  Excluded for complexity < %.2f:    %d\n", COMPLEXITY, sum(obj$log10GenesPerUMI <= COMPLEXITY)))
+cat(sprintf("  Excluded as doublets:              %d\n", sum(obj$scDblFinder.class == "doublet")))
+cat(sprintf("  Cells passing ALL filters:         %d / %d (%.1f%%)\n",
             sum(obj$pass_all), ncol(obj), 100 * mean(obj$pass_all)))
 
-# Filtra
+# Filter
 obj_filtered <- subset(obj, pass_all == TRUE)
-cat(sprintf("\nCellule dopo filtraggio: %d\n", ncol(obj_filtered)))
-cat(sprintf("Geni: %d\n", nrow(obj_filtered)))
+cat(sprintf("\nCells after filtering: %d\n", ncol(obj_filtered)))
+cat(sprintf("Genes: %d\n", nrow(obj_filtered)))
 
-# Rimuovi geni espressi in 0 cellule dopo il filtraggio
+# Remove genes expressed in 0 cells after filtering
 counts_filt <- GetAssayData(obj_filtered, layer = "counts")
 genes_keep <- rownames(counts_filt)[Matrix::rowSums(counts_filt > 0) >= 3]
 obj_filtered <- subset(obj_filtered, features = genes_keep)
-cat(sprintf("Geni dopo rimozione (min 3 cellule): %d\n", nrow(obj_filtered)))
+cat(sprintf("Genes after removal (min 3 cells): %d\n", nrow(obj_filtered)))
 
 
 ##=============================================================================
-## 3. PLOT PRIMA/DOPO FILTRAGGIO
+## 3. PRE/POST FILTERING PLOTS
 ##=============================================================================
 
-cat("\n=== 3. Plot confronto prima/dopo ===\n")
+cat("\n=== 3. Pre vs post filtering plots ===\n")
 
 dpi <- 300
 
-# 3.1 Densita' nCount prima/dopo
+# 3.1 nCount density pre/post
 pre_df  <- data.frame(nCount = obj$nCount_RNA, stato = "Pre-filtering")
 post_df <- data.frame(nCount = obj_filtered$nCount_RNA, stato = "Post-filtering")
 df_count <- rbind(pre_df, post_df)
@@ -102,7 +102,7 @@ p1 <- ggplot(df_count, aes(x = nCount, fill = stato)) +
 ggsave(file.path(outdir, "01_density_nCount_pre_post.png"), p1,
        width = 8, height = 5, dpi = dpi)
 
-# 3.2 Densita' nFeature prima/dopo
+# 3.2 nFeature density pre/post
 pre_df2  <- data.frame(nFeature = obj$nFeature_RNA, stato = "Pre-filtering")
 post_df2 <- data.frame(nFeature = obj_filtered$nFeature_RNA, stato = "Post-filtering")
 df_feat <- rbind(pre_df2, post_df2)
@@ -118,7 +118,7 @@ p2 <- ggplot(df_feat, aes(x = nFeature, fill = stato)) +
 ggsave(file.path(outdir, "02_density_nFeature_pre_post.png"), p2,
        width = 8, height = 5, dpi = dpi)
 
-# 3.3 Scatter post-filtraggio
+# 3.3 Scatter post-filtering
 p3 <- ggplot(obj_filtered@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
   geom_point(size = 0.2, alpha = 0.2, color = "steelblue") +
   scale_x_log10() + scale_y_log10() +
@@ -128,7 +128,7 @@ p3 <- ggplot(obj_filtered@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
 ggsave(file.path(outdir, "03_scatter_post_filter.png"), p3,
        width = 7, height = 6, dpi = dpi)
 
-# 3.4 Violin post-filtraggio
+# 3.4 Violin post-filtering
 p4 <- VlnPlot(obj_filtered, features = c("nFeature_RNA", "nCount_RNA"),
               ncol = 2, pt.size = 0) & theme_minimal() & NoLegend()
 ggsave(file.path(outdir, "04_violin_post_filter.png"), p4,
@@ -136,19 +136,19 @@ ggsave(file.path(outdir, "04_violin_post_filter.png"), p4,
 
 
 ##=============================================================================
-## 4. STATISTICHE POST-FILTRAGGIO
+## 4. POST-FILTERING STATISTICS
 ##=============================================================================
 
-cat("\n=== STATISTICHE POST-FILTRAGGIO ===\n")
-cat(sprintf("Cellule: %d (da %d, rimosso %.1f%%)\n",
+cat("\n=== POST-FILTERING STATISTICS ===\n")
+cat(sprintf("Cells: %d (from %d, removed %.1f%%)\n",
             ncol(obj_filtered), ncol(obj),
             100 * (1 - ncol(obj_filtered) / ncol(obj))))
-cat(sprintf("Geni: %d\n", nrow(obj_filtered)))
+cat(sprintf("Genes: %d\n", nrow(obj_filtered)))
 
 # Helper
 has_meta <- function(obj, col) col %in% colnames(obj@meta.data)
 
-# --- Tabella riepilogativa pre vs post filtraggio ---
+# --- Summary table pre vs post filtering ---
 calc_stats <- function(x) {
   c(min = min(x, na.rm = TRUE), Q1 = unname(quantile(x, 0.25, na.rm = TRUE)),
     median = median(x, na.rm = TRUE), Q3 = unname(quantile(x, 0.75, na.rm = TRUE)),
@@ -182,9 +182,9 @@ summary_table <- data.frame(
   row.names   = NULL
 )
 
-# Aggiungi riga con conteggi cellule e geni
+# Add row with cell and gene counts
 counts_row <- data.frame(
-  metrica = c("Cellule", "Geni"),
+  metrica = c("Cells", "Genes"),
   pre_min = c(ncol(obj), nrow(obj)),
   pre_Q1 = NA, pre_median = NA, pre_Q3 = NA, pre_max = NA,
   post_min = c(ncol(obj_filtered), nrow(obj_filtered)),
@@ -193,15 +193,15 @@ counts_row <- data.frame(
 
 summary_table <- rbind(counts_row, summary_table)
 
-# Stampa a console
-cat("\n=== TABELLA RIEPILOGATIVA PRE vs POST FILTRAGGIO ===\n\n")
+# Print to console
+cat("\n=== SUMMARY TABLE PRE vs POST FILTERING ===\n\n")
 cat(sprintf("  %-20s | %10s %10s %10s %10s %10s | %10s %10s %10s %10s %10s\n",
             "", "PRE_min", "PRE_Q1", "PRE_med", "PRE_Q3", "PRE_max",
             "POST_min", "POST_Q1", "POST_med", "POST_Q3", "POST_max"))
 cat(paste(rep("-", 135), collapse = ""), "\n")
 for (i in seq_len(nrow(summary_table))) {
   row <- summary_table[i, ]
-  if (row$metrica %in% c("Cellule", "Geni")) {
+  if (row$metrica %in% c("Cells", "Genes")) {
     cat(sprintf("  %-20s | %10.0f %10s %10s %10s %10s | %10.0f %10s %10s %10s %10s\n",
                 row$metrica, row$pre_min, "", "", "", "",
                 row$post_min, "", "", "", ""))
@@ -214,67 +214,67 @@ for (i in seq_len(nrow(summary_table))) {
 }
 cat("\n")
 
-# Salva tabella come CSV e XLSX
+# Save table as CSV and XLSX
 write.csv(summary_table, file.path(outdir, "summary_pre_vs_post.csv"), row.names = FALSE)
 
 if (requireNamespace("openxlsx", quietly = TRUE)) {
   library(openxlsx)
   wb <- createWorkbook()
 
-  # Foglio 1: Riepilogo pre vs post
+  # Sheet 1: Pre vs post summary
   addWorksheet(wb, "Pre vs Post")
   writeData(wb, "Pre vs Post", summary_table)
   headerStyle <- createStyle(textDecoration = "bold", border = "bottom")
   addStyle(wb, "Pre vs Post", headerStyle, rows = 1, cols = 1:ncol(summary_table))
   setColWidths(wb, "Pre vs Post", cols = 1:ncol(summary_table), widths = "auto")
 
-  # Foglio 2: Soglie applicate
+  # Sheet 2: Applied thresholds
   soglie_df <- data.frame(
-    Filtro = c("nCount_RNA", "nFeature_RNA", "log10GenesPerUMI", "scDblFinder", "SoupX"),
-    Soglia_min = c(NCOUNT_MIN, NFEATURE_MIN, COMPLEXITY, NA, NA),
-    Soglia_max = c(NCOUNT_MAX, NFEATURE_MAX, NA, NA, NA),
-    Metodo = c("3 MAD (log10)", "3 MAD (log10)", "Standard", "scDblFinder", "SoupX v1.6.2"),
-    Note = c("UMI per cellula", "Geni rilevati per cellula",
-             "Complessita trascrizionale", "class == singlet, threshold 0.414",
-             "Contaminazione stimata 2.9%")
+    Filter = c("nCount_RNA", "nFeature_RNA", "log10GenesPerUMI", "scDblFinder", "SoupX"),
+    Threshold_min = c(NCOUNT_MIN, NFEATURE_MIN, COMPLEXITY, NA, NA),
+    Threshold_max = c(NCOUNT_MAX, NFEATURE_MAX, NA, NA, NA),
+    Method = c("3 MAD (log10)", "3 MAD (log10)", "Standard", "scDblFinder", "SoupX v1.6.2"),
+    Notes = c("UMI per cell", "Genes detected per cell",
+              "Transcriptional complexity", "class == singlet, threshold 0.414",
+              "Estimated contamination 2.9%")
   )
-  addWorksheet(wb, "Soglie applicate")
-  writeData(wb, "Soglie applicate", soglie_df)
-  addStyle(wb, "Soglie applicate", headerStyle, rows = 1, cols = 1:ncol(soglie_df))
-  setColWidths(wb, "Soglie applicate", cols = 1:ncol(soglie_df), widths = "auto")
+  addWorksheet(wb, "Applied thresholds")
+  writeData(wb, "Applied thresholds", soglie_df)
+  addStyle(wb, "Applied thresholds", headerStyle, rows = 1, cols = 1:ncol(soglie_df))
+  setColWidths(wb, "Applied thresholds", cols = 1:ncol(soglie_df), widths = "auto")
 
-  # Foglio 3: Conteggi filtraggio
+  # Sheet 3: Filtering counts
   filter_counts <- data.frame(
-    Descrizione = c("Cellule pre-filtraggio",
-                    "Escluse per nCount basso", "Escluse per nCount alto",
-                    "Escluse per nFeature basso", "Escluse per nFeature alto",
-                    "Escluse per bassa complessita", "Escluse come doublet",
-                    "Cellule post-filtraggio", "Geni post-filtraggio"),
-    Valore = c(ncol(obj),
+    Description = c("Cells pre-filtering",
+                    "Excluded for low nCount", "Excluded for high nCount",
+                    "Excluded for low nFeature", "Excluded for high nFeature",
+                    "Excluded for low complexity", "Excluded as doublets",
+                    "Cells post-filtering", "Genes post-filtering"),
+    Value = c(ncol(obj),
                sum(obj$nCount_RNA < NCOUNT_MIN), sum(obj$nCount_RNA > NCOUNT_MAX),
                sum(obj$nFeature_RNA < NFEATURE_MIN), sum(obj$nFeature_RNA > NFEATURE_MAX),
                sum(obj$log10GenesPerUMI <= COMPLEXITY),
                sum(obj$scDblFinder.class == "doublet"),
                ncol(obj_filtered), nrow(obj_filtered))
   )
-  addWorksheet(wb, "Conteggi filtraggio")
-  writeData(wb, "Conteggi filtraggio", filter_counts)
-  addStyle(wb, "Conteggi filtraggio", headerStyle, rows = 1, cols = 1:ncol(filter_counts))
-  setColWidths(wb, "Conteggi filtraggio", cols = 1:ncol(filter_counts), widths = "auto")
+  addWorksheet(wb, "Filtering counts")
+  writeData(wb, "Filtering counts", filter_counts)
+  addStyle(wb, "Filtering counts", headerStyle, rows = 1, cols = 1:ncol(filter_counts))
+  setColWidths(wb, "Filtering counts", cols = 1:ncol(filter_counts), widths = "auto")
 
   saveWorkbook(wb, file.path(outdir, "QC_filtering_summary.xlsx"), overwrite = TRUE)
-  cat("Tabella XLSX salvata: QC_filtering_summary.xlsx\n")
+  cat("XLSX table saved: QC_filtering_summary.xlsx\n")
 } else {
-  cat("NOTA: pacchetto openxlsx non disponibile, XLSX non generato.\n")
-  cat("Per installarlo: install.packages('openxlsx')\n")
+  cat("NOTE: openxlsx package not available, XLSX not generated.\n")
+  cat("To install: install.packages('openxlsx')\n")
 }
 
 
 ##=============================================================================
-## 5. SALVA OGGETTO FILTRATO
+## 5. SAVE FILTERED OBJECT
 ##=============================================================================
 
-# Rimuovi colonne temporanee
+# Remove temporary columns
 obj_filtered$pass_nCount   <- NULL
 obj_filtered$pass_nFeature <- NULL
 obj_filtered$pass_complex  <- NULL
@@ -284,8 +284,8 @@ obj_filtered$pass_all      <- NULL
 saveRDS(obj_filtered, file.path(outdir, "VvProt_filtered.rds"))
 write.csv(obj_filtered@meta.data, file.path(outdir, "metadata_post_filter.csv"), row.names = TRUE)
 
-cat("\n=== FILTRAGGIO COMPLETATO ===\n")
-cat("Oggetto filtrato: VvProt_filtered.rds\n")
+cat("\n=== FILTERING COMPLETED ===\n")
+cat("Filtered object: VvProt_filtered.rds\n")
 cat("Metadata: metadata_post_filter.csv\n")
-cat("Plot in:", outdir, "\n")
-cat("\nPROSSIMO STEP: FASE 5 — SCTransform, PCA, clustering, UMAP\n")
+cat("Plots in:", outdir, "\n")
+cat("\nNEXT STEP: PHASE 5 — SCTransform, PCA, clustering, UMAP\n")
