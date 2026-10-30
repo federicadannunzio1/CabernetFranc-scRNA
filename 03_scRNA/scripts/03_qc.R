@@ -3,7 +3,8 @@
 ##
 ## Ordine operazioni:
 ##   1. SoupX — correzione ambient RNA (usa matrice raw + filtrata)
-##   2. Metriche QC per cellula (nCount, nFeature, complessita', ribo, stress)
+##   2. Metriche QC per cellula (nCount, nFeature, complessita', ribo, chloro, stress)
+##      usando l'annotazione funzionale per identificare categorie geniche
 ##   3. scDblFinder — predizione doublet
 ##   4. Plot diagnostici con tutte le metriche + doublet score
 ##   5. Soglie suggerite (MAD-based) — NON filtra, decidiamo dopo
@@ -28,26 +29,23 @@ dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 cr_outs      <- file.path(proj, "03_scRNA/01_alignment/VvProt_scRNA/outs")
 filtered_dir <- file.path(cr_outs, "filtered_feature_bc_matrix")
 raw_dir      <- file.path(cr_outs, "raw_feature_bc_matrix")
+annot_file   <- file.path(proj, "01_reference/5.1_on_T2T_ref_functional_annotation_summary_with_coordinates.tsv")
+
+# Helper: controlla se una colonna esiste nei metadata
+has_meta <- function(obj, col) col %in% colnames(obj@meta.data)
 
 
 ##=============================================================================
 ## 1. SoupX — RIMOZIONE AMBIENT RNA
 ##=============================================================================
-## SoupX stima la "zuppa" di RNA ambientale dai barcode vuoti (matrice raw)
-## e la sottrae dalla matrice filtrata (cellule vere).
-## Usa il clustering di Cell Ranger per stimare i profili di contaminazione.
 
 cat("=== 1. SoupX: correzione ambient RNA ===\n")
 
-# Carica con il metodo automatico di SoupX (legge clustering CR da analysis/)
 sc <- load10X(cr_outs)
-
-# Stima automatica della frazione di contaminazione
 sc <- autoEstCont(sc)
 cat(sprintf("Frazione contaminazione stimata: %.3f (%.1f%%)\n",
             sc$fit$rhoEst, 100 * sc$fit$rhoEst))
 
-# Correggi le conte
 counts_corrected <- adjustCounts(sc)
 
 cat(sprintf("Dimensioni matrice corretta: %d geni x %d cellule\n",
@@ -75,65 +73,73 @@ obj <- CreateSeuratObject(counts = counts_corrected, project = "VvProt",
 
 cat(sprintf("Cellule: %d (dopo min.cells=3, min.features=200)\n", ncol(obj)))
 cat(sprintf("Geni: %d\n", nrow(obj)))
-cat(sprintf("Esempio nomi geni: %s\n", paste(head(rownames(obj), 10), collapse = ", ")))
+cat(sprintf("Esempio nomi geni: %s\n", paste(head(rownames(obj), 5), collapse = ", ")))
 
 
 ##=============================================================================
-## 3. METRICHE QC PER CELLULA
+## 3. ANNOTAZIONE FUNZIONALE → CATEGORIE GENICHE
 ##=============================================================================
 
-cat("\n=== 3. Calcolo metriche QC ===\n")
+cat("\n=== 3. Identificazione categorie geniche dall'annotazione ===\n")
 
-# 3.1 Geni ribosomali
-#     I rownames possono essere ID (Vitvi05_...) o nomi genici.
-ribo_by_name <- grep("(?i)(^RPL|^RPS[0-9]|^MRPL|^MRPS|ribosomal protein)",
-                     rownames(obj), value = TRUE, perl = TRUE)
+# Carica annotazione funzionale
+annot <- read.delim(annot_file, header = TRUE, stringsAsFactors = FALSE)
 
-if (length(ribo_by_name) > 0) {
-  obj[["percent.ribo"]] <- PercentageFeatureSet(obj, features = ribo_by_name)
-  cat(sprintf("Geni ribosomali trovati (per nome): %d\n", length(ribo_by_name)))
-} else {
-  cat("NOTA: nessun gene ribosomale trovato per pattern nome.\n")
-  cat("I rownames sono probabilmente ID Vitvi05_. Cercando con pattern ID...\n")
-  # Se i nomi non funzionano, percent.ribo resta NA
-  obj[["percent.ribo"]] <- NA
+# Seurat converte _ in - nei nomi dei geni. Facciamo lo stesso sugli ID annotazione.
+annot$gene_seurat <- gsub("_", "-", annot$gene)
+
+# Geni presenti nell'oggetto Seurat
+genes_in_obj <- rownames(obj)
+
+# Funzione: cerca pattern in colonne di annotazione e restituisce geni presenti in obj
+find_genes <- function(annot, genes_in_obj, pattern, columns) {
+  hits <- rep(FALSE, nrow(annot))
+  for (col in columns) {
+    hits <- hits | grepl(pattern, annot[[col]], ignore.case = TRUE, perl = TRUE)
+  }
+  matched <- annot$gene_seurat[hits]
+  intersect(matched, genes_in_obj)
 }
 
-# 3.2 Geni mitocondriali / plastidiali
-#     chr00 escluso dal reference -> le sequenze organellari NON mappano.
-#     NON possiamo calcolare %mito/%chloro classico.
-#     Cerchiamo geni nucleari che codificano proteine organellari.
-#     ATTENZIONE: questi NON sono contaminazione, sono geni nucleari reali.
+# 3.1 Geni ribosomali
+ribo_genes <- find_genes(annot, genes_in_obj,
+  "ribosom|\\brps\\b|\\brpl\\b|\\bmrpl\\b|\\bmrps\\b|ribosomal.protein",
+  c("Pfam", "PANTHER", "eggNOG"))
 
-mito_genes <- grep("(?i)(^NAD[0-9]|^COX[0-9]|^ATP[0-9]|^CYTB|^COB|^SDH[0-9])",
-                   rownames(obj), value = TRUE, perl = TRUE)
-chloro_genes <- grep("(?i)(^PSB[A-Z]|^PSA[A-Z]|^LHCB|^LHCA|^RBCS|^RBCL|^PETC|^ATPC)",
-                     rownames(obj), value = TRUE, perl = TRUE)
+cat(sprintf("Geni ribosomali: %d\n", length(ribo_genes)))
+if (length(ribo_genes) > 0) {
+  obj[["percent.ribo"]] <- PercentageFeatureSet(obj, features = ribo_genes)
+}
 
-cat(sprintf("Geni con pattern mitocondriale nucleare: %d\n", length(mito_genes)))
-if (length(mito_genes) > 0) cat("  ", paste(head(mito_genes, 15), collapse = ", "), "\n")
-cat(sprintf("Geni con pattern plastidiale nucleare: %d\n", length(chloro_genes)))
-if (length(chloro_genes) > 0) cat("  ", paste(head(chloro_genes, 15), collapse = ", "), "\n")
+# 3.2 Geni cloroplastidiali (proteine target al cloroplasto)
+#     Fotosintesi, light harvesting, Calvin cycle, tilacoide
+chloro_genes <- find_genes(annot, genes_in_obj,
+  "chloroplast|photosystem|light.harvesting|thylakoid|rubisco|LHCB|LHCA|photosynthesis|plastid|plastocyanin|ferredoxin.*chloro",
+  c("Pfam", "PANTHER", "GO_cellular_component", "eggNOG"))
 
+cat(sprintf("Geni plastidiali/fotosintetici: %d\n", length(chloro_genes)))
 if (length(chloro_genes) > 0) {
   obj[["percent.chloro"]] <- PercentageFeatureSet(obj, features = chloro_genes)
 }
 
-# 3.3 Complessita': log10(nFeature) / log10(nCount)
-#     Valori bassi = pochi geni su molti UMI -> dying cells, ambient RNA,
-#     o cellule dominate da pochi trascritti altamente espressi
-obj[["log10GenesPerUMI"]] <- log10(obj$nFeature_RNA) / log10(obj$nCount_RNA)
+# 3.3 Geni stress / risposta a ferita / difesa
+#     HSP, WRKY, ERF, PR proteins, JA/SA pathway, ROS, chitinasi, glucanasi
+stress_genes <- find_genes(annot, genes_in_obj,
+  "heat.shock|HSP[0-9]|chaperone.*stress|wound|defense|pathogen|chitinase|glucanase|peroxidase|WRKY|ethylene.response|PR-protein|thaumatin|protease.inhibitor|jasmonate|salicylic|oxidative.stress|catalase.*stress|superoxide.dismutase",
+  c("Pfam", "PANTHER", "GO_biological_process", "eggNOG"))
 
-# 3.4 Geni stress / protoplastizzazione
-#     La digestione enzimatica della parete induce geni di stress.
-stress_genes <- grep("(?i)(^HSP|^WRKY|^ERF|^JAZ|^MYC2|^PR-|^PR[0-9]|^LOX|^AOS|^AOC|^OPR|^PAL|^CHS|wound|defense|pathogen|chitinase|glucanase|peroxidase)",
-                     rownames(obj), value = TRUE, perl = TRUE)
-
-cat(sprintf("Geni stress/difesa trovati per pattern: %d\n", length(stress_genes)))
+cat(sprintf("Geni stress/difesa: %d\n", length(stress_genes)))
 if (length(stress_genes) > 0) {
-  cat("  ", paste(head(stress_genes, 20), collapse = ", "), "\n")
   obj[["percent.stress"]] <- PercentageFeatureSet(obj, features = stress_genes)
 }
+
+# 3.4 Complessita': log10(nFeature) / log10(nCount)
+obj[["log10GenesPerUMI"]] <- log10(obj$nFeature_RNA) / log10(obj$nCount_RNA)
+
+# Salva le liste di geni per riferimento
+writeLines(ribo_genes, file.path(outdir, "gene_list_ribosomal.txt"))
+writeLines(chloro_genes, file.path(outdir, "gene_list_chloroplast.txt"))
+writeLines(stress_genes, file.path(outdir, "gene_list_stress.txt"))
 
 
 ##=============================================================================
@@ -142,13 +148,11 @@ if (length(stress_genes) > 0) {
 
 cat("\n=== 4. scDblFinder: predizione doublet ===\n")
 
-# Converti in SingleCellExperiment per scDblFinder
 sce <- as.SingleCellExperiment(obj)
 sce <- scDblFinder(sce)
 
-# Trasferisci risultati nel Seurat object
-obj[["scDblFinder.score"]]  <- sce$scDblFinder.score
-obj[["scDblFinder.class"]]  <- sce$scDblFinder.class
+obj[["scDblFinder.score"]] <- sce$scDblFinder.score
+obj[["scDblFinder.class"]] <- sce$scDblFinder.class
 
 n_singlet <- sum(obj$scDblFinder.class == "singlet")
 n_doublet <- sum(obj$scDblFinder.class == "doublet")
@@ -176,9 +180,9 @@ qc_summary(obj$nCount_RNA, "nCount_RNA")
 qc_summary(obj$nFeature_RNA, "nFeature_RNA")
 qc_summary(obj$log10GenesPerUMI, "log10GenesPerUMI")
 qc_summary(obj$scDblFinder.score, "doublet.score")
-if (!all(is.na(obj$percent.ribo)))      qc_summary(obj$percent.ribo, "percent.ribo")
-if (!is.null(obj[["percent.chloro"]]))  qc_summary(obj$percent.chloro, "percent.chloro")
-if (!is.null(obj[["percent.stress"]]))  qc_summary(obj$percent.stress, "percent.stress")
+if (has_meta(obj, "percent.ribo"))   qc_summary(obj$percent.ribo, "percent.ribo")
+if (has_meta(obj, "percent.chloro")) qc_summary(obj$percent.chloro, "percent.chloro")
+if (has_meta(obj, "percent.stress")) qc_summary(obj$percent.stress, "percent.stress")
 
 
 ##=============================================================================
@@ -204,7 +208,6 @@ cat(sprintf("  nFeature_RNA:     [%.0f — %.0f]\n", nFeature_lo, nFeature_hi))
 cat(sprintf("  log10GenesPerUMI: > 0.80\n"))
 cat(sprintf("  scDblFinder:      class == 'singlet'\n"))
 
-# Conta cellule che passano ogni filtro
 pass_count   <- obj$nCount_RNA >= nCount_lo & obj$nCount_RNA <= nCount_hi
 pass_feature <- obj$nFeature_RNA >= nFeature_lo & obj$nFeature_RNA <= nFeature_hi
 pass_complex <- obj$log10GenesPerUMI > 0.80
@@ -236,14 +239,14 @@ p_vln <- VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA"),
 ggsave(file.path(outdir, "01_violin_nFeature_nCount.png"), p_vln,
        width = 10, height = 5, dpi = 200)
 
-# 7.2 Violin metriche extra (complessita', ribo, chloro, stress)
+# 7.2 Violin metriche extra
 extra_features <- "log10GenesPerUMI"
-if (!all(is.na(obj$percent.ribo)))      extra_features <- c(extra_features, "percent.ribo")
-if (!is.null(obj[["percent.chloro"]]))  extra_features <- c(extra_features, "percent.chloro")
-if (!is.null(obj[["percent.stress"]]))  extra_features <- c(extra_features, "percent.stress")
+if (has_meta(obj, "percent.ribo"))   extra_features <- c(extra_features, "percent.ribo")
+if (has_meta(obj, "percent.chloro")) extra_features <- c(extra_features, "percent.chloro")
+if (has_meta(obj, "percent.stress")) extra_features <- c(extra_features, "percent.stress")
 
 p_vln2 <- VlnPlot(obj, features = extra_features,
-                  ncol = length(extra_features), pt.size = 0) &
+                   ncol = length(extra_features), pt.size = 0) &
   theme_minimal() & NoLegend()
 ggsave(file.path(outdir, "02_violin_complexity_extra.png"), p_vln2,
        width = 5 * length(extra_features), height = 5, dpi = 200)
@@ -295,7 +298,7 @@ p_complex <- ggplot(obj@meta.data, aes(x = log10GenesPerUMI)) +
 ggsave(file.path(outdir, "05_density_complexity.png"), p_complex,
        width = 6, height = 5, dpi = 200)
 
-# 7.6 Scatter con soglie MAD sovrapposte
+# 7.6 Scatter con soglie MAD
 p_thresh <- ggplot(obj@meta.data, aes(x = nCount_RNA, y = nFeature_RNA)) +
   geom_point(size = 0.2, alpha = 0.2, color = "grey30") +
   scale_x_log10() + scale_y_log10() +
@@ -321,7 +324,7 @@ ggsave(file.path(outdir, "07_scatter_count_vs_complexity.png"), p_sc_compl,
        width = 7, height = 6, dpi = 200)
 
 # 7.8 Scatter stress vs nCount
-if (!is.null(obj[["percent.stress"]])) {
+if (has_meta(obj, "percent.stress")) {
   p_stress <- ggplot(obj@meta.data, aes(x = nCount_RNA, y = percent.stress)) +
     geom_point(size = 0.2, alpha = 0.2, color = "grey30") +
     scale_x_log10() +
@@ -332,16 +335,29 @@ if (!is.null(obj[["percent.stress"]])) {
          width = 7, height = 6, dpi = 200)
 }
 
-# 7.9 Doublet score — distribuzione e scatter
+# 7.9 Scatter chloro vs nCount
+if (has_meta(obj, "percent.chloro")) {
+  p_chloro <- ggplot(obj@meta.data, aes(x = nCount_RNA, y = percent.chloro)) +
+    geom_point(size = 0.2, alpha = 0.2, color = "grey30") +
+    scale_x_log10() +
+    labs(title = "UMI vs % geni plastidiali/fotosintetici",
+         x = "nCount_RNA (log10)", y = "% UMI geni cloroplasto") +
+    theme_minimal()
+  ggsave(file.path(outdir, "09_scatter_chloroplast.png"), p_chloro,
+         width = 7, height = 6, dpi = 200)
+}
+
+# 7.10 Doublet score — distribuzione
 p_dbl_dens <- ggplot(obj@meta.data, aes(x = scDblFinder.score, fill = scDblFinder.class)) +
   geom_density(alpha = 0.5) +
   scale_fill_manual(values = c("singlet" = "steelblue", "doublet" = "red")) +
   labs(title = "Distribuzione doublet score (scDblFinder)",
        x = "Doublet score", y = "Densita'", fill = "Classe") +
   theme_minimal()
-ggsave(file.path(outdir, "09_density_doublet_score.png"), p_dbl_dens,
+ggsave(file.path(outdir, "10_density_doublet_score.png"), p_dbl_dens,
        width = 7, height = 5, dpi = 200)
 
+# 7.11 Scatter doublet
 p_dbl_scatter <- ggplot(obj@meta.data,
                         aes(x = nCount_RNA, y = nFeature_RNA, color = scDblFinder.class)) +
   geom_point(size = 0.3, alpha = 0.3) +
@@ -350,14 +366,14 @@ p_dbl_scatter <- ggplot(obj@meta.data,
   labs(title = "nCount vs nFeature — doublet evidenziati",
        x = "nCount_RNA (log10)", y = "nFeature_RNA (log10)", color = "Classe") +
   theme_minimal()
-ggsave(file.path(outdir, "10_scatter_doublets.png"), p_dbl_scatter,
+ggsave(file.path(outdir, "11_scatter_doublets.png"), p_dbl_scatter,
        width = 8, height = 7, dpi = 200)
 
-# Doublet per posizione nello spazio: i doublet tendono ad avere nCount/nFeature alti
+# 7.12 Violin singlet vs doublet
 p_dbl_violin <- VlnPlot(obj, features = c("nCount_RNA", "nFeature_RNA"),
-                        group.by = "scDblFinder.class", ncol = 2, pt.size = 0) &
+                         group.by = "scDblFinder.class", ncol = 2, pt.size = 0) &
   theme_minimal()
-ggsave(file.path(outdir, "11_violin_singlet_vs_doublet.png"), p_dbl_violin,
+ggsave(file.path(outdir, "12_violin_singlet_vs_doublet.png"), p_dbl_violin,
        width = 10, height = 5, dpi = 200)
 
 
@@ -370,17 +386,24 @@ gene_totals <- sort(Matrix::rowSums(counts_mat), decreasing = TRUE)
 total_umi <- sum(gene_totals)
 top30 <- head(gene_totals, 30)
 
+# Aggiunge descrizione dall'annotazione
 cat("\n=== TOP 30 GENI PIU' ESPRESSI ===\n")
 for (i in seq_along(top30)) {
-  cat(sprintf("  %2d. %-35s %10d UMI  (%.2f%%)\n",
-              i, names(top30)[i], top30[i], 100 * top30[i] / total_umi))
+  gname <- names(top30)[i]
+  # Cerca nell'annotazione (riconverti - in _ per il match)
+  gid_orig <- gsub("-", "_", gname)
+  desc <- ""
+  idx <- match(gid_orig, annot$gene)
+  if (!is.na(idx)) desc <- substr(annot$eggNOG[idx], 1, 50)
+  cat(sprintf("  %2d. %-30s %10d UMI (%.2f%%)  %s\n",
+              i, gname, top30[i], 100 * top30[i] / total_umi, desc))
 }
 
 top_pct <- cumsum(top30) / total_umi * 100
 cat(sprintf("\n  Top 10 geni: %.1f%% UMI totali\n", top_pct[10]))
 cat(sprintf("  Top 30 geni: %.1f%% UMI totali\n", top_pct[30]))
 
-# Plot
+# Plot top 30
 top30_df <- data.frame(
   gene = factor(names(top30), levels = rev(names(top30))),
   total_umi = as.numeric(top30),
@@ -392,14 +415,14 @@ p_top <- ggplot(top30_df, aes(x = total_umi, y = gene)) +
   scale_x_continuous(expand = expansion(mult = c(0, 0.15))) +
   labs(title = "Top 30 geni piu' espressi (UMI totali)", x = "UMI totali", y = "") +
   theme_minimal()
-ggsave(file.path(outdir, "12_top30_genes.png"), p_top, width = 9, height = 8, dpi = 200)
+ggsave(file.path(outdir, "13_top30_genes.png"), p_top, width = 9, height = 8, dpi = 200)
 
 # % cellule che esprimono i top 10
 cat("\n=== % CELLULE CHE ESPRIMONO I TOP 10 GENI ===\n")
 for (i in 1:min(10, length(top30))) {
   gene_name <- names(top30)[i]
   pct_cells <- 100 * sum(counts_mat[gene_name, ] > 0) / ncol(counts_mat)
-  cat(sprintf("  %-35s espresso in %.1f%% delle cellule\n", gene_name, pct_cells))
+  cat(sprintf("  %-30s espresso in %.1f%% delle cellule\n", gene_name, pct_cells))
 }
 
 
@@ -412,7 +435,7 @@ p_hist <- ggplot(obj@meta.data, aes(x = nFeature_RNA)) +
   geom_vline(xintercept = c(nFeature_lo, nFeature_hi), linetype = "dashed", color = "red") +
   labs(title = "Istogramma geni per cellula", x = "nFeature_RNA", y = "Numero cellule") +
   theme_minimal()
-ggsave(file.path(outdir, "13_histogram_nFeature.png"), p_hist,
+ggsave(file.path(outdir, "14_histogram_nFeature.png"), p_hist,
        width = 7, height = 5, dpi = 200)
 
 
@@ -423,7 +446,6 @@ ggsave(file.path(outdir, "13_histogram_nFeature.png"), p_hist,
 write.csv(obj@meta.data, file.path(outdir, "metadata_pre_filter.csv"), row.names = TRUE)
 saveRDS(obj, file.path(outdir, "VvProt_prefilter.rds"))
 
-# Salva anche le soglie suggerite in un file per riferimento
 soglie <- data.frame(
   metrica = c("nCount_RNA_min", "nCount_RNA_max",
               "nFeature_RNA_min", "nFeature_RNA_max",
@@ -440,8 +462,9 @@ write.csv(soglie, file.path(outdir, "soglie_suggerite.csv"), row.names = FALSE)
 cat("\n=== QC COMPLETATO ===\n")
 cat("Plot salvati in:", outdir, "\n")
 cat("Oggetto Seurat (SoupX corretto, con doublet score): VvProt_prefilter.rds\n")
-cat("Metadata completo: metadata_pre_filter.csv\n")
+cat("Metadata: metadata_pre_filter.csv\n")
 cat("Soglie suggerite: soglie_suggerite.csv\n")
+cat("Liste geni: gene_list_ribosomal.txt, gene_list_chloroplast.txt, gene_list_stress.txt\n")
 cat(sprintf("Contaminazione SoupX: %.1f%%\n", 100 * sc$fit$rhoEst))
 cat(sprintf("Doublet predetti: %d / %d (%.1f%%)\n", n_doublet, ncol(obj),
             100 * n_doublet / ncol(obj)))
