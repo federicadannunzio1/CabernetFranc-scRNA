@@ -103,7 +103,7 @@ DefaultAssay(obj) <- "RNA"
 obj <- NormalizeData(obj, verbose = FALSE)
 
 markers <- FindAllMarkers(obj,
-                          only.pos = TRUE,
+                          only.pos = FALSE,
                           min.pct = 0.25,
                           logfc.threshold = 0.25,
                           verbose = TRUE)
