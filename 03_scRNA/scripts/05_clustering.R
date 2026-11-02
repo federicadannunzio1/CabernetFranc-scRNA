@@ -10,6 +10,7 @@
 library(Seurat)
 library(ggplot2)
 library(patchwork)
+library(cluster)    # silhouette
 
 set.seed(42)
 
@@ -170,10 +171,61 @@ for (res in resolutions) {
   cat(sprintf("  Resolution %.1f: %d clusters\n", res, n_clust))
 }
 
-# Set default to 0.6 (can adjust later)
-Idents(obj) <- "SCT_snn_res.0.6"
-cat(sprintf("\nDefault clustering: resolution 0.6 (%d clusters)\n",
-            length(levels(Idents(obj)))))
+# 5.1 Clustree — resolution stability
+if (requireNamespace("clustree", quietly = TRUE)) {
+  library(clustree)
+  p_ctree <- clustree(obj, prefix = "SCT_snn_res.") +
+    labs(title = "Clustree — cluster stability across resolutions") +
+    theme_pub()
+  ggsave(file.path(outdir, "10_clustree.png"), p_ctree,
+         width = 12, height = 10, dpi = dpi)
+  cat("Clustree plot saved.\n")
+} else {
+  cat("NOTE: clustree package not available. Install with: install.packages('clustree')\n")
+}
+
+# 5.2 Silhouette score per resolution
+cat("\nSilhouette analysis:\n")
+dist_mat <- dist(Embeddings(obj, "pca")[, 1:n_pcs])
+
+sil_summary <- data.frame(resolution = numeric(), n_clusters = integer(),
+                          mean_silhouette = numeric())
+for (res in resolutions) {
+  col_name <- paste0("SCT_snn_res.", res)
+  cl_ids <- as.integer(obj@meta.data[[col_name]])
+  n_cl <- length(unique(cl_ids))
+  if (n_cl > 1) {
+    sil <- silhouette(cl_ids, dist_mat)
+    avg_sil <- mean(sil[, 3])
+    sil_summary <- rbind(sil_summary,
+                         data.frame(resolution = res, n_clusters = n_cl,
+                                    mean_silhouette = avg_sil))
+    cat(sprintf("  Resolution %.1f: %2d clusters, mean silhouette = %.3f\n",
+                res, n_cl, avg_sil))
+  }
+}
+
+# Silhouette plot
+p_sil <- ggplot(sil_summary, aes(x = resolution, y = mean_silhouette)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 3, color = "steelblue") +
+  geom_text(aes(label = sprintf("%d cl\n%.3f", n_clusters, mean_silhouette)),
+            vjust = -1, size = 2.8) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(title = "Mean silhouette score across resolutions",
+       x = "Resolution", y = "Mean silhouette width") +
+  theme_pub()
+ggsave(file.path(outdir, "11_silhouette_scores.png"), p_sil,
+       width = 8, height = 5, dpi = dpi)
+
+# Select best resolution by silhouette
+best_res <- sil_summary$resolution[which.max(sil_summary$mean_silhouette)]
+best_col <- paste0("SCT_snn_res.", best_res)
+Idents(obj) <- best_col
+cat(sprintf("\nBest resolution by silhouette: %.1f (%d clusters, silhouette = %.3f)\n",
+            best_res,
+            length(levels(Idents(obj))),
+            max(sil_summary$mean_silhouette)))
 
 
 ##=============================================================================
@@ -206,8 +258,8 @@ ggsave(file.path(outdir, "04_UMAP_resolutions.png"), p_res,
 
 # 7.2 UMAP default resolution (larger)
 p_umap <- DimPlot(obj, label = TRUE, label.size = 4, pt.size = 0.5) +
-  labs(title = sprintf("UMAP — %d clusters (resolution 0.6, %d PCs)",
-                       length(levels(Idents(obj))), n_pcs)) +
+  labs(title = sprintf("UMAP — %d clusters (resolution %.1f, %d PCs)",
+                       length(levels(Idents(obj))), best_res, n_pcs)) +
   theme_pub()
 ggsave(file.path(outdir, "05_UMAP_clusters.png"), p_umap,
        width = 9, height = 7, dpi = dpi)
@@ -284,22 +336,62 @@ for (cl in levels(Idents(obj))) {
               median(m$percent.chloro)))
 }
 
-# Save cluster stats as CSV
+# Build cluster stats table
 cluster_stats <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
   cells <- WhichCells(obj, idents = cl)
   m <- obj@meta.data[cells, ]
   data.frame(
-    cluster = cl,
-    n_cells = length(cells),
-    pct_cells = 100 * length(cells) / ncol(obj),
-    median_nCount = median(m$nCount_RNA),
-    median_nFeature = median(m$nFeature_RNA),
-    median_percent_stress = median(m$percent.stress),
-    median_percent_chloro = median(m$percent.chloro),
-    median_percent_ribo = median(m$percent.ribo)
+    Cluster = cl,
+    Cells = length(cells),
+    Pct_cells = round(100 * length(cells) / ncol(obj), 1),
+    Median_nCount = round(median(m$nCount_RNA), 0),
+    Median_nFeature = round(median(m$nFeature_RNA), 0),
+    Median_pct_stress = round(median(m$percent.stress), 1),
+    Median_pct_chloro = round(median(m$percent.chloro), 1),
+    Median_pct_ribo = round(median(m$percent.ribo), 1)
   )
 }))
 write.csv(cluster_stats, file.path(outdir, "cluster_statistics.csv"), row.names = FALSE)
+
+# Save XLSX with multiple sheets
+if (requireNamespace("openxlsx", quietly = TRUE)) {
+  library(openxlsx)
+  wb <- createWorkbook()
+  headerStyle <- createStyle(textDecoration = "bold", border = "bottom")
+
+  # Sheet 1: Cluster statistics
+  addWorksheet(wb, "Cluster statistics")
+  writeData(wb, "Cluster statistics", cluster_stats)
+  addStyle(wb, "Cluster statistics", headerStyle, rows = 1, cols = 1:ncol(cluster_stats))
+  setColWidths(wb, "Cluster statistics", cols = 1:ncol(cluster_stats), widths = "auto")
+
+  # Sheet 2: Silhouette scores
+  addWorksheet(wb, "Resolution selection")
+  writeData(wb, "Resolution selection", sil_summary)
+  addStyle(wb, "Resolution selection", headerStyle, rows = 1, cols = 1:ncol(sil_summary))
+  setColWidths(wb, "Resolution selection", cols = 1:ncol(sil_summary), widths = "auto")
+
+  # Sheet 3: Parameters used
+  params_df <- data.frame(
+    Parameter = c("Total cells", "Total genes", "Normalization",
+                  "PCs used", "Resolutions tested", "Best resolution (silhouette)",
+                  "Number of clusters", "Mean silhouette"),
+    Value = c(ncol(obj), nrow(obj), "SCTransform",
+              n_pcs, paste(resolutions, collapse = ", "),
+              best_res,
+              length(levels(Idents(obj))),
+              round(max(sil_summary$mean_silhouette), 3))
+  )
+  addWorksheet(wb, "Parameters")
+  writeData(wb, "Parameters", params_df)
+  addStyle(wb, "Parameters", headerStyle, rows = 1, cols = 1:ncol(params_df))
+  setColWidths(wb, "Parameters", cols = 1:ncol(params_df), widths = "auto")
+
+  saveWorkbook(wb, file.path(outdir, "clustering_summary.xlsx"), overwrite = TRUE)
+  cat("XLSX saved: clustering_summary.xlsx\n")
+} else {
+  cat("NOTE: openxlsx not available, XLSX not generated.\n")
+}
 
 
 ##=============================================================================
@@ -313,6 +405,8 @@ write.csv(obj@meta.data, file.path(outdir, "metadata_clustered.csv"), row.names 
 cat("\n=== CLUSTERING COMPLETED ===\n")
 cat(sprintf("Object: VvProt_clustered.rds (%d cells, %d genes)\n", ncol(obj), nrow(obj)))
 cat(sprintf("PCs used: %d\n", n_pcs))
-cat(sprintf("Default resolution: 0.6 (%d clusters)\n", length(levels(Idents(obj)))))
+cat(sprintf("Best resolution: %.1f (%d clusters, silhouette = %.3f)\n",
+            best_res, length(levels(Idents(obj))),
+            max(sil_summary$mean_silhouette)))
 cat("Plots in:", outdir, "\n")
 cat("\nNEXT STEP: PHASE 6 — Marker genes + cell type annotation\n")
