@@ -80,9 +80,18 @@ if (file.exists(stress_file)) {
   cat("WARNING: stress gene list not found, skipping check.\n")
 }
 
+# Remove stress genes from HVG (keep them in the dataset, just not for PCA/clustering)
+if (length(stress_genes) > 0) {
+  hvg_clean <- setdiff(hvg, stress_genes)
+  VariableFeatures(obj) <- hvg_clean
+  cat(sprintf("HVG after removing stress genes: %d (removed %d)\n",
+              length(hvg_clean), length(hvg) - length(hvg_clean)))
+}
+
 # Variable feature plot
+hvg_final <- VariableFeatures(obj)
 p_hvg <- VariableFeaturePlot(obj) +
-  labs(title = sprintf("Variable features (n = %d)", length(hvg))) +
+  labs(title = sprintf("Variable features (n = %d, stress genes excluded)", length(hvg_final))) +
   theme_pub()
 ggsave(file.path(outdir, "01_variable_features.png"), p_hvg,
        width = 8, height = 6, dpi = dpi)
