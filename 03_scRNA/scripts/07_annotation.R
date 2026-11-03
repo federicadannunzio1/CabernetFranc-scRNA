@@ -655,6 +655,46 @@ if ("Phase" %in% colnames(obj@meta.data) && !all(obj$Phase == "Unknown")) {
   ggsave(file.path(outdir, "08_barplot_cell_cycle_per_cluster.png"), p_cc_bar,
          width = 10, height = 5, dpi = dpi)
 
+  # Overall phase distribution (pie chart)
+  phase_counts <- as.data.frame(table(obj$Phase))
+  colnames(phase_counts) <- c("Phase", "Count")
+  phase_counts$Pct <- round(100 * phase_counts$Count / sum(phase_counts$Count), 1)
+  phase_counts$Label <- paste0(phase_counts$Phase, "\n", phase_counts$Count,
+                               " (", phase_counts$Pct, "%)")
+  phase_counts$Phase <- factor(phase_counts$Phase, levels = c("G1", "S", "G2M"))
+
+  p_pie <- ggplot(phase_counts, aes(x = "", y = Count, fill = Phase)) +
+    geom_col(width = 1, color = "white") +
+    coord_polar(theta = "y") +
+    geom_text(aes(label = Label), position = position_stack(vjust = 0.5), size = 4) +
+    scale_fill_manual(values = c("G1" = "grey80", "S" = "#E69F00", "G2M" = "#D55E00")) +
+    labs(title = "Overall cell cycle phase distribution") +
+    theme_void() + theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  ggsave(file.path(outdir, "09_pie_cell_cycle_overall.png"), p_pie,
+         width = 7, height = 6, dpi = dpi)
+
+  # S.Score vs G2M.Score scatter, colored by phase
+  p_scatter <- ggplot(data.frame(S = obj$S.Score, G2M = obj$G2M.Score, Phase = obj$Phase),
+                      aes(x = S, y = G2M, color = Phase)) +
+    geom_point(size = 0.3, alpha = 0.5) +
+    scale_color_manual(values = c("G1" = "grey70", "S" = "#E69F00", "G2M" = "#D55E00")) +
+    labs(title = "S-phase vs G2M score per cell",
+         x = "S-phase score", y = "G2M score") +
+    theme_pub()
+  ggsave(file.path(outdir, "10_scatter_S_vs_G2M_score.png"), p_scatter,
+         width = 8, height = 6, dpi = dpi)
+
+  # Violin of S and G2M scores per cluster
+  p_vln_s <- VlnPlot(obj, features = "S.Score", pt.size = 0) +
+    labs(title = "S-phase score per cluster") +
+    theme_pub() + NoLegend()
+  p_vln_g2m <- VlnPlot(obj, features = "G2M.Score", pt.size = 0) +
+    labs(title = "G2M score per cluster") +
+    theme_pub() + NoLegend()
+  p_vln_cc <- p_vln_s / p_vln_g2m
+  ggsave(file.path(outdir, "11_violin_cell_cycle_scores.png"), p_vln_cc,
+         width = 12, height = 8, dpi = dpi)
+
   cat("Cell cycle plots saved\n")
 }
 
