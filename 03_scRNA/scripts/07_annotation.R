@@ -790,7 +790,34 @@ if (requireNamespace("openxlsx", quietly = TRUE)) {
     setColWidths(wb, "Cell cycle", cols = seq_len(ncol(cc_per_cluster)), widths = "auto")
   }
 
-  # Sheet 6: Known marker genes used
+  # Sheet 6: Summary table (compact overview)
+  summary_table <- data.frame(
+    Cluster        = combined_annot$Cluster,
+    Cells          = paste0(combined_annot$N_cells, " (", combined_annot$Pct_cells, "%)"),
+    Suggested_type = combined_annot$Suggested_type,
+    Confidence     = combined_annot$Confidence,
+    Cell_cycle     = sapply(seq_len(nrow(combined_annot)), function(i) {
+      r <- combined_annot[i, ]
+      cc <- paste0(r$Pct_cycling, "% cycling")
+      # Add dominant phase detail
+      if (r$Pct_S > 40) {
+        cc <- paste0(cc, " (", r$Pct_S, "% S)")
+      } else if (r$Pct_G2M > 40) {
+        cc <- paste0(cc, " (", r$Pct_G2M, "% G2M)")
+      }
+      cc
+    }),
+    Median_stress  = paste0(combined_annot$Median_stress, "%"),
+    Median_chloro  = paste0(combined_annot$Median_chloro, "%"),
+    Top5_DE_markers = combined_annot$Top5_DE_markers,
+    stringsAsFactors = FALSE
+  )
+  addWorksheet(wb, "Summary")
+  writeData(wb, "Summary", summary_table)
+  addStyle(wb, "Summary", hs, rows = 1, cols = seq_len(ncol(summary_table)))
+  setColWidths(wb, "Summary", cols = seq_len(ncol(summary_table)), widths = "auto")
+
+  # Sheet 7: Known marker genes used
   addWorksheet(wb, "Marker genes")
   writeData(wb, "Marker genes", marker_list_df)
   addStyle(wb, "Marker genes", hs, rows = 1, cols = seq_len(ncol(marker_list_df)))
