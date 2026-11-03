@@ -192,8 +192,9 @@ cat("\n=== 3. Computing module scores ===\n")
 for (ct in names(cell_types)) {
   genes <- cell_types[[ct]]
   if (length(genes) >= 3) {
+    n_bin <- min(24, length(genes))
     obj <- AddModuleScore(obj, features = list(genes),
-                          name = paste0("score_", ct), seed = 42)
+                          name = paste0("score_", ct), nbin = n_bin, seed = 42)
     colnames(obj@meta.data)[ncol(obj@meta.data)] <- paste0("score_", ct)
     cat(sprintf("  %s: module score computed (%d genes)\n", ct, length(genes)))
   } else {
