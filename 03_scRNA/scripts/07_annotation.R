@@ -2,7 +2,7 @@
 ## PHASE 7: Cell type annotation — module scores + FindAllMarkers integration
 ##
 ## Input:  03_scRNA/04_clustering/VvProt_clustered.rds
-##         03_scRNA/05_markers/all_markers.csv
+##         03_scRNA/05_DE_analysis/all_markers.csv
 ## Output: 03_scRNA/06_annotation/ (plots + tables)
 ##
 ## Strategy:
@@ -38,7 +38,7 @@ dpi <- 300
 # Reference files
 equiv_file   <- file.path(proj, "01_reference/all_on_T2T_ref_equivalences_filtered_no_copies_symbols.csv")
 annot_file   <- file.path(proj, "01_reference/5.1_on_T2T_ref_functional_annotation_summary_with_coordinates.tsv")
-markers_file <- file.path(proj, "03_scRNA/05_markers/all_markers.csv")
+markers_file <- file.path(proj, "03_scRNA/05_DE_analysis/all_markers.csv")
 
 
 ##=============================================================================
