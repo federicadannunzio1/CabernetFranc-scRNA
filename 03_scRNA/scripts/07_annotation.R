@@ -504,7 +504,9 @@ cat("\n=== 11. Annotated UMAP ===\n")
 
 # Create cluster → suggested label map
 label_map <- setNames(combined_annot$Suggested_type, combined_annot$Cluster)
-obj$annotation <- label_map[as.character(Idents(obj))]
+annot_vec <- label_map[as.character(Idents(obj))]
+names(annot_vec) <- colnames(obj)
+obj$annotation <- annot_vec
 
 # UMAP with cluster numbers
 p_umap_cl <- DimPlot(obj, group.by = "seurat_clusters", label = TRUE, pt.size = 0.3) +
