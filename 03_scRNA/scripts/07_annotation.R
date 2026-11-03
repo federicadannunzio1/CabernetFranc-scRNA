@@ -372,7 +372,7 @@ combined_annot <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
     top_overlap_labels <- ""
   }
 
-  # --- C: Cell cycle info ---
+  # --- C: Cell cycle info (informational only, no correction applied) ---
   pct_cycling <- 0
   pct_s <- 0
   pct_g2m <- 0
@@ -383,40 +383,16 @@ combined_annot <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
     pct_g2m <- cc_row$Pct_G2M
   }
 
-  # --- D: Combined verdict ---
-  # Exclude "Dividing" from module score ranking if cell cycle says < 20% cycling
-  # → the high Dividing module score is likely stress, not real proliferation
-  best_score_ct_tissue <- best_score_ct
-  if (best_score_ct == "Dividing" && pct_cycling < 20) {
-    # Use second-best module score instead
-    best_score_ct_tissue <- score_rank[2]
-    best_score_val <- scores[best_score_ct_tissue]
-  }
-
-  # Similarly for DE overlap
-  best_overlap_ct_tissue <- best_overlap_ct
-  if (best_overlap_ct == "Dividing" && pct_cycling < 20) {
-    ol_counts_no_div <- ol_counts[names(ol_counts) != "Dividing"]
-    if (max(ol_counts_no_div) > 0) {
-      best_overlap_ct_tissue <- names(which.max(ol_counts_no_div))
-      best_overlap_n <- max(ol_counts_no_div)
-    }
-  }
-
-  if (best_score_ct_tissue == best_overlap_ct_tissue) {
-    suggested <- best_score_ct_tissue
+  # --- D: Combined verdict (module score + DE overlap) ---
+  if (best_score_ct == best_overlap_ct) {
+    suggested <- best_score_ct
     confidence <- "high"
   } else if (best_overlap_n == 0) {
-    suggested <- best_score_ct_tissue
+    suggested <- best_score_ct
     confidence <- "low (no DE overlap)"
   } else {
-    suggested <- paste0(best_score_ct_tissue, " / ", best_overlap_ct_tissue)
+    suggested <- paste0(best_score_ct, " / ", best_overlap_ct)
     confidence <- "medium (methods disagree)"
-  }
-
-  # Add cycling label if > 40% cycling cells
-  if (pct_cycling >= 40) {
-    suggested <- paste0(suggested, " (cycling)")
   }
 
   # Top 5 positive DE markers for this cluster (any cell type)
@@ -430,9 +406,9 @@ combined_annot <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
     Cluster          = cl,
     N_cells          = length(cells),
     Pct_cells        = round(100 * length(cells) / ncol(obj), 1),
-    ModuleScore_best = best_score_ct_tissue,
+    ModuleScore_best = best_score_ct,
     ModuleScore_val  = round(best_score_val, 4),
-    DEoverlap_best   = best_overlap_ct_tissue,
+    DEoverlap_best   = best_overlap_ct,
     DEoverlap_n      = best_overlap_n,
     DEoverlap_genes  = top_overlap_labels,
     Pct_cycling      = pct_cycling,
