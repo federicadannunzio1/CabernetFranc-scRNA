@@ -189,18 +189,27 @@ for (ct in names(cell_types)) {
 
 cat("\n=== 3. Computing module scores ===\n")
 
+# Switch to RNA assay: normalize and join layers for Seurat v5 compatibility
+DefaultAssay(obj) <- "RNA"
+obj[["RNA"]] <- JoinLayers(obj[["RNA"]])
+obj <- NormalizeData(obj, verbose = FALSE)
+cat("RNA assay normalized for module score computation\n")
+
 for (ct in names(cell_types)) {
   genes <- cell_types[[ct]]
   genes <- genes[genes %in% rownames(obj)]
   if (length(genes) >= 5) {
     obj <- AddModuleScore(obj, features = list(genes),
-                          name = paste0("score_", ct), nbin = 5, seed = 42)
+                          name = paste0("score_", ct), seed = 42)
     colnames(obj@meta.data)[ncol(obj@meta.data)] <- paste0("score_", ct)
     cat(sprintf("  %s: module score computed (%d genes)\n", ct, length(genes)))
   } else {
     cat(sprintf("  %s: skipped (only %d genes, need >= 5)\n", ct, length(genes)))
   }
 }
+
+# Switch back to SCT for visualization
+DefaultAssay(obj) <- "SCT"
 
 
 ##=============================================================================
