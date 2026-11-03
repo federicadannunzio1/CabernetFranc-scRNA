@@ -2,7 +2,7 @@
 ## PHASE 6: Marker genes per cluster
 ##
 ## Input:  03_scRNA/04_clustering/VvProt_clustered.rds
-## Output: 03_scRNA/05_DE_analysis/ (tables + plots)
+## Output: 03_scRNA/05_finding_markers/ (tables + plots)
 ##
 ## Uses RNA assay for DE (not SCT) as recommended by Seurat developers.
 ## Gene labels use Grapedia equivalence table when available.
@@ -26,7 +26,7 @@ theme_pub <- function() {
 # --- Paths ----
 proj    <- "/lustre/home/dcapozzi/projects/scRNA_protoplasts"
 indir   <- file.path(proj, "03_scRNA/04_clustering")
-outdir  <- file.path(proj, "03_scRNA/05_DE_analysis")
+outdir  <- file.path(proj, "03_scRNA/05_finding_markers")
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 dpi <- 300
