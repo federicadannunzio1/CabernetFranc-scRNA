@@ -189,8 +189,9 @@ for (ct in names(cell_types)) {
 
 cat("\n=== 3. Computing module scores ===\n")
 
-# Use RNA assay for AddModuleScore (SCT data layer can cause binning issues)
+# Use RNA assay for AddModuleScore (SCT data layer causes binning issues in v5)
 DefaultAssay(obj) <- "RNA"
+obj <- NormalizeData(obj, verbose = FALSE)
 
 for (ct in names(cell_types)) {
   genes <- cell_types[[ct]]
@@ -198,7 +199,8 @@ for (ct in names(cell_types)) {
   if (length(genes) >= 3) {
     n_bin <- min(24, length(genes))
     obj <- AddModuleScore(obj, features = list(genes),
-                          name = paste0("score_", ct), nbin = n_bin, seed = 42)
+                          name = paste0("score_", ct), nbin = n_bin,
+                          seed = 42, search = FALSE)
     colnames(obj@meta.data)[ncol(obj@meta.data)] <- paste0("score_", ct)
     cat(sprintf("  %s: module score computed (%d genes)\n", ct, length(genes)))
   } else {
