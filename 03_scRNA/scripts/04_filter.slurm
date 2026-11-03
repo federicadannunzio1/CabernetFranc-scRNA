@@ -17,4 +17,4 @@ PROJ=/lustre/home/dcapozzi/projects/scRNA_protoplasts
 eval "$(conda shell.bash hook)"
 conda activate seurat_env
 
-Rscript $PROJ/03_scRNA/scripts/04_filter.R
+Rscript $PROJ/repo/03_scRNA/scripts/04_filter.R
