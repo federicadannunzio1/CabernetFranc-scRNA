@@ -208,6 +208,79 @@ for (ct in names(cell_types)) {
   }
 }
 
+##=============================================================================
+## 3b. CELL CYCLE SCORING
+##=============================================================================
+
+cat("\n=== 3b. Cell cycle scoring ===\n")
+
+# Define S-phase and G2M gene sets for grapevine (orthologs of Tirosh et al. 2016)
+# RNA assay is already active and normalized
+
+s_genes_vv <- unique(c(
+  find_by_symbol("^MCM[2-7]", equiv, obj),
+  find_by_symbol("^PCNA", equiv, obj),
+  find_by_symbol("^RPA[0-9]", equiv, obj),
+  find_by_symbol("^RFC[0-9]", equiv, obj),
+  find_by_symbol("^POLD[0-9]", equiv, obj),
+  find_by_symbol("^PRIM[0-9]", equiv, obj),
+  find_by_symbol("^FEN1", equiv, obj),
+  find_by_symbol("^RRM[12]", equiv, obj),
+  find_by_symbol("^RAD51$", equiv, obj),
+  find_by_symbol("^NASP", equiv, obj),
+  find_by_annot("DNA.replication|DNA.polymerase.*alpha|DNA.primase", annot, obj)
+))
+
+g2m_genes_vv <- unique(c(
+  find_by_symbol("^CYCB[0-9]", equiv, obj),
+  find_by_symbol("^CDKB[0-9]", equiv, obj),
+  find_by_symbol("^CDC20", equiv, obj),
+  find_by_symbol("^AURORA", equiv, obj),
+  find_by_symbol("^TOP2", equiv, obj),
+  find_by_symbol("^NACK[12]", equiv, obj),
+  find_by_symbol("^KN$|^KNOLLE", equiv, obj),
+  find_by_annot("condensin|kinesin.*mitot|septin|cytokinesis", annot, obj)
+))
+
+cat(sprintf("S-phase genes found: %d\n", length(s_genes_vv)))
+cat(sprintf("G2M genes found: %d\n", length(g2m_genes_vv)))
+
+if (length(s_genes_vv) >= 5 && length(g2m_genes_vv) >= 5) {
+  obj <- CellCycleScoring(obj,
+                          s.features   = s_genes_vv,
+                          g2m.features = g2m_genes_vv,
+                          set.ident    = FALSE)
+  cat(sprintf("\nCell cycle phase distribution:\n"))
+  phase_tab <- table(obj$Phase)
+  for (ph in names(phase_tab)) {
+    cat(sprintf("  %s: %d cells (%.1f%%)\n", ph, phase_tab[ph],
+                100 * phase_tab[ph] / ncol(obj)))
+  }
+
+  # Per-cluster cell cycle summary
+  cc_per_cluster <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
+    cells <- WhichCells(obj, idents = cl)
+    ph <- obj$Phase[cells]
+    n <- length(cells)
+    data.frame(
+      Cluster  = cl,
+      N_cells  = n,
+      Pct_G1   = round(100 * sum(ph == "G1") / n, 1),
+      Pct_S    = round(100 * sum(ph == "S") / n, 1),
+      Pct_G2M  = round(100 * sum(ph == "G2M") / n, 1),
+      Pct_cycling = round(100 * sum(ph != "G1") / n, 1)
+    )
+  }))
+  cat("\nCell cycle per cluster:\n")
+  print(cc_per_cluster, row.names = FALSE)
+} else {
+  cat("WARNING: Not enough S/G2M genes found for cell cycle scoring\n")
+  obj$Phase <- "Unknown"
+  obj$S.Score <- 0
+  obj$G2M.Score <- 0
+  cc_per_cluster <- NULL
+}
+
 # Switch back to SCT for visualization
 DefaultAssay(obj) <- "SCT"
 
@@ -299,17 +372,51 @@ combined_annot <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
     top_overlap_labels <- ""
   }
 
-  # --- C: Combined verdict ---
-  # If both agree → high confidence; if they disagree → flag both
-  if (best_score_ct == best_overlap_ct) {
-    suggested <- best_score_ct
+  # --- C: Cell cycle info ---
+  pct_cycling <- 0
+  pct_s <- 0
+  pct_g2m <- 0
+  if (!is.null(cc_per_cluster)) {
+    cc_row <- cc_per_cluster[cc_per_cluster$Cluster == cl, ]
+    pct_cycling <- cc_row$Pct_cycling
+    pct_s   <- cc_row$Pct_S
+    pct_g2m <- cc_row$Pct_G2M
+  }
+
+  # --- D: Combined verdict ---
+  # Exclude "Dividing" from module score ranking if cell cycle says < 20% cycling
+  # → the high Dividing module score is likely stress, not real proliferation
+  best_score_ct_tissue <- best_score_ct
+  if (best_score_ct == "Dividing" && pct_cycling < 20) {
+    # Use second-best module score instead
+    best_score_ct_tissue <- score_rank[2]
+    best_score_val <- scores[best_score_ct_tissue]
+  }
+
+  # Similarly for DE overlap
+  best_overlap_ct_tissue <- best_overlap_ct
+  if (best_overlap_ct == "Dividing" && pct_cycling < 20) {
+    ol_counts_no_div <- ol_counts[names(ol_counts) != "Dividing"]
+    if (max(ol_counts_no_div) > 0) {
+      best_overlap_ct_tissue <- names(which.max(ol_counts_no_div))
+      best_overlap_n <- max(ol_counts_no_div)
+    }
+  }
+
+  if (best_score_ct_tissue == best_overlap_ct_tissue) {
+    suggested <- best_score_ct_tissue
     confidence <- "high"
   } else if (best_overlap_n == 0) {
-    suggested <- best_score_ct
+    suggested <- best_score_ct_tissue
     confidence <- "low (no DE overlap)"
   } else {
-    suggested <- paste0(best_score_ct, " / ", best_overlap_ct)
+    suggested <- paste0(best_score_ct_tissue, " / ", best_overlap_ct_tissue)
     confidence <- "medium (methods disagree)"
+  }
+
+  # Add cycling label if > 40% cycling cells
+  if (pct_cycling >= 40) {
+    suggested <- paste0(suggested, " (cycling)")
   }
 
   # Top 5 positive DE markers for this cluster (any cell type)
@@ -323,11 +430,14 @@ combined_annot <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
     Cluster          = cl,
     N_cells          = length(cells),
     Pct_cells        = round(100 * length(cells) / ncol(obj), 1),
-    ModuleScore_best = best_score_ct,
+    ModuleScore_best = best_score_ct_tissue,
     ModuleScore_val  = round(best_score_val, 4),
-    DEoverlap_best   = best_overlap_ct,
+    DEoverlap_best   = best_overlap_ct_tissue,
     DEoverlap_n      = best_overlap_n,
     DEoverlap_genes  = top_overlap_labels,
+    Pct_cycling      = pct_cycling,
+    Pct_S            = pct_s,
+    Pct_G2M          = pct_g2m,
     Suggested_type   = suggested,
     Confidence       = confidence,
     Top5_DE_markers  = top5_str,
@@ -339,17 +449,18 @@ combined_annot <- do.call(rbind, lapply(levels(Idents(obj)), function(cl) {
 
 # Print summary
 cat("\n=== COMBINED ANNOTATION SUMMARY ===\n\n")
-cat(sprintf("%-5s %5s %5s  %-16s %7s  %-16s %3s  %-16s  %-28s  %6s %6s\n",
+cat(sprintf("%-5s %5s %5s  %-16s %7s  %-16s %3s  %6s %4s %4s  %-24s  %-28s  %6s %6s\n",
             "Cl", "Cells", "Pct", "ModScore", "Val",
-            "DEoverlap", "N", "Suggested", "Confidence",
-            "Stress", "Chloro"))
-cat(paste(rep("-", 140), collapse = ""), "\n")
+            "DEoverlap", "N", "Cycl%", "S%", "G2M%",
+            "Suggested", "Confidence", "Str%", "Chl%"))
+cat(paste(rep("-", 160), collapse = ""), "\n")
 for (i in seq_len(nrow(combined_annot))) {
   r <- combined_annot[i, ]
-  cat(sprintf("%-5s %5d %4.1f%%  %-16s %7.4f  %-16s %3d  %-16s  %-28s  %5.1f%% %5.1f%%\n",
+  cat(sprintf("%-5s %5d %4.1f%%  %-16s %7.4f  %-16s %3d  %5.1f%% %4.1f %4.1f  %-24s  %-28s  %5.1f%% %5.1f%%\n",
               r$Cluster, r$N_cells, r$Pct_cells,
               r$ModuleScore_best, r$ModuleScore_val,
               r$DEoverlap_best, r$DEoverlap_n,
+              r$Pct_cycling, r$Pct_S, r$Pct_G2M,
               r$Suggested_type, r$Confidence,
               r$Median_stress, r$Median_chloro))
 }
@@ -525,10 +636,58 @@ ggsave(file.path(outdir, "06_UMAP_annotation.png"), p_umap_both,
 
 
 ##=============================================================================
-## 12. SAVE
+## 12. CELL CYCLE PLOTS
 ##=============================================================================
 
-cat("\n=== 12. Saving ===\n")
+cat("\n=== 12. Cell cycle plots ===\n")
+
+if ("Phase" %in% colnames(obj@meta.data) && !all(obj$Phase == "Unknown")) {
+  # UMAP colored by cell cycle phase
+  p_cc_umap <- DimPlot(obj, group.by = "Phase", pt.size = 0.3,
+                        cols = c("G1" = "grey80", "S" = "#E69F00", "G2M" = "#D55E00")) +
+    labs(title = "Cell cycle phase") +
+    theme_pub()
+
+  # UMAP colored by S and G2M scores
+  p_s <- FeaturePlot(obj, features = "S.Score", pt.size = 0.3) +
+    scale_color_viridis_c(option = "magma") +
+    labs(title = "S-phase score") + theme_pub()
+  p_g2m <- FeaturePlot(obj, features = "G2M.Score", pt.size = 0.3) +
+    scale_color_viridis_c(option = "magma") +
+    labs(title = "G2M score") + theme_pub()
+
+  p_cc_all <- p_cc_umap | p_s | p_g2m
+  ggsave(file.path(outdir, "07_UMAP_cell_cycle.png"), p_cc_all,
+         width = 21, height = 6, dpi = dpi)
+
+  # Bar plot: cell cycle phase per cluster
+  cc_data <- data.frame(
+    Cluster = as.character(Idents(obj)),
+    Phase   = obj$Phase
+  )
+  cc_data$Cluster <- factor(cc_data$Cluster,
+                            levels = as.character(sort(as.integer(unique(cc_data$Cluster)))))
+  cc_data$Phase <- factor(cc_data$Phase, levels = c("G1", "S", "G2M"))
+
+  p_cc_bar <- ggplot(cc_data, aes(x = Cluster, fill = Phase)) +
+    geom_bar(position = "fill") +
+    scale_fill_manual(values = c("G1" = "grey80", "S" = "#E69F00", "G2M" = "#D55E00")) +
+    scale_y_continuous(labels = scales::percent) +
+    labs(title = "Cell cycle phase composition per cluster",
+         x = "Cluster", y = "Proportion") +
+    theme_pub()
+  ggsave(file.path(outdir, "08_barplot_cell_cycle_per_cluster.png"), p_cc_bar,
+         width = 10, height = 5, dpi = dpi)
+
+  cat("Cell cycle plots saved\n")
+}
+
+
+##=============================================================================
+## 13. SAVE
+##=============================================================================
+
+cat("\n=== 13. Saving ===\n")
 
 # CSV — combined annotation
 write.csv(combined_annot, file.path(outdir, "cluster_annotation.csv"), row.names = FALSE)
@@ -607,7 +766,15 @@ if (requireNamespace("openxlsx", quietly = TRUE)) {
   addStyle(wb, "Module scores", hs, rows = 1, cols = seq_len(ncol(score_summary)))
   setColWidths(wb, "Module scores", cols = seq_len(ncol(score_summary)), widths = "auto")
 
-  # Sheet 5: Known marker genes used
+  # Sheet 5: Cell cycle per cluster
+  if (!is.null(cc_per_cluster)) {
+    addWorksheet(wb, "Cell cycle")
+    writeData(wb, "Cell cycle", cc_per_cluster)
+    addStyle(wb, "Cell cycle", hs, rows = 1, cols = seq_len(ncol(cc_per_cluster)))
+    setColWidths(wb, "Cell cycle", cols = seq_len(ncol(cc_per_cluster)), widths = "auto")
+  }
+
+  # Sheet 6: Known marker genes used
   addWorksheet(wb, "Marker genes")
   writeData(wb, "Marker genes", marker_list_df)
   addStyle(wb, "Marker genes", hs, rows = 1, cols = seq_len(ncol(marker_list_df)))
