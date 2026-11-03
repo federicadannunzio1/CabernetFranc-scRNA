@@ -170,12 +170,24 @@ cat("\n=== 6. Generating plots ===\n")
 # Switch back to SCT for visualization
 DefaultAssay(obj) <- "SCT"
 
-# 6.1 Heatmap top 5 markers per cluster
-top5_genes <- top5$gene
-# Ensure unique genes
-top5_genes <- unique(top5_genes)
+# Helper: build Grapedia label for a gene (short form for axis labels)
+gene_label <- function(g) {
+  lab <- get_gene_label(g, equiv, annot)
+  if (nchar(lab) > 0) paste0(lab, " (", g, ")") else g
+}
 
+# Build named vector for relabeling axes: Vitvi ID -> "Symbol (Vitvi ID)"
+all_marker_genes <- unique(markers$gene)
+gene_name_map <- setNames(sapply(all_marker_genes, gene_label), all_marker_genes)
+
+# 6.1 Heatmap top 5 markers per cluster
+top5_genes <- unique(top5$gene)
+
+# Relabel genes in heatmap
 p_heat <- DoHeatmap(obj, features = top5_genes, size = 3, angle = 90) +
+  scale_y_discrete(labels = function(x) sapply(x, function(g) {
+    if (g %in% names(gene_name_map)) gene_name_map[g] else g
+  })) +
   theme(axis.text.y = element_text(size = 5)) +
   NoLegend()
 ggsave(file.path(outdir, "01_heatmap_top5_markers.png"), p_heat,
@@ -188,22 +200,29 @@ top3 <- markers |>
   dplyr::ungroup()
 
 p_dot <- DotPlot(obj, features = unique(top3$gene)) +
-  RotatedAxis() +
+  scale_x_discrete(labels = function(x) sapply(x, function(g) {
+    if (g %in% names(gene_name_map)) gene_name_map[g] else g
+  })) +
   labs(title = "Top 3 markers per cluster") +
   theme_pub() +
   theme(axis.text.x = element_text(size = 6, angle = 90, hjust = 1, vjust = 0.5))
 ggsave(file.path(outdir, "02_dotplot_top3_markers.png"), p_dot,
-       width = 18, height = 7, dpi = dpi)
+       width = 20, height = 7, dpi = dpi)
 
 # 6.3 Feature plots — top 2 markers per cluster (on UMAP)
 for (cl in levels(Idents(obj))) {
   cl_top <- top5[top5$cluster == cl, ]
   genes_to_plot <- head(cl_top$gene, 2)
   if (length(genes_to_plot) > 0) {
-    plots <- FeaturePlot(obj, features = genes_to_plot, pt.size = 0.3,
-                         ncol = 2, combine = TRUE) &
-      scale_color_viridis_c() & theme_pub()
-    ggsave(file.path(outdir, sprintf("03_feature_cluster_%s.png", cl)), plots,
+    plot_list <- list()
+    for (g in genes_to_plot) {
+      plot_list[[g]] <- FeaturePlot(obj, features = g, pt.size = 0.3) +
+        scale_color_viridis_c() +
+        labs(title = gene_label(g)) +
+        theme_pub()
+    }
+    p_feat <- wrap_plots(plot_list, ncol = 2)
+    ggsave(file.path(outdir, sprintf("03_feature_cluster_%s.png", cl)), p_feat,
            width = 12, height = 5, dpi = dpi)
   }
 }
@@ -213,9 +232,14 @@ for (cl in levels(Idents(obj))) {
   cl_top <- top5[top5$cluster == cl, ]
   genes_to_plot <- head(cl_top$gene, 2)
   if (length(genes_to_plot) > 0) {
-    plots <- VlnPlot(obj, features = genes_to_plot, pt.size = 0, ncol = 2) &
-      theme_pub()
-    ggsave(file.path(outdir, sprintf("04_violin_cluster_%s.png", cl)), plots,
+    plot_list <- list()
+    for (g in genes_to_plot) {
+      plot_list[[g]] <- VlnPlot(obj, features = g, pt.size = 0) +
+        labs(title = gene_label(g)) +
+        theme_pub() + NoLegend()
+    }
+    p_vln <- wrap_plots(plot_list, ncol = 2)
+    ggsave(file.path(outdir, sprintf("04_violin_cluster_%s.png", cl)), p_vln,
            width = 14, height = 5, dpi = dpi)
   }
 }
