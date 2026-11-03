@@ -189,8 +189,12 @@ for (ct in names(cell_types)) {
 
 cat("\n=== 3. Computing module scores ===\n")
 
+# Use RNA assay for AddModuleScore (SCT data layer can cause binning issues)
+DefaultAssay(obj) <- "RNA"
+
 for (ct in names(cell_types)) {
   genes <- cell_types[[ct]]
+  genes <- genes[genes %in% rownames(obj)]
   if (length(genes) >= 3) {
     n_bin <- min(24, length(genes))
     obj <- AddModuleScore(obj, features = list(genes),
@@ -201,6 +205,9 @@ for (ct in names(cell_types)) {
     cat(sprintf("  %s: skipped (only %d genes found)\n", ct, length(genes)))
   }
 }
+
+# Switch back to SCT for visualization
+DefaultAssay(obj) <- "SCT"
 
 
 ##=============================================================================
