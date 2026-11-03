@@ -1,9 +1,9 @@
 ##=============================================================================
 ## PHASE 7: Cell type annotation — module scores + FindAllMarkers integration
 ##
-## Input:  03_scRNA/04_analysis/VvProt_clustered.rds
-##         03_scRNA/04_analysis/markers/all_markers.csv
-## Output: 03_scRNA/04_analysis/annotation/ (plots + tables)
+## Input:  03_scRNA/04_clustering/VvProt_clustered.rds
+##         03_scRNA/05_markers/all_markers.csv
+## Output: 03_scRNA/06_annotation/ (plots + tables)
 ##
 ## Strategy:
 ##   A) Module scores from known leaf marker gene sets (Arabidopsis orthologs)
@@ -29,8 +29,8 @@ theme_pub <- function() {
 
 # --- Paths ----
 proj   <- "/lustre/home/dcapozzi/projects/scRNA_protoplasts"
-indir  <- file.path(proj, "03_scRNA/04_analysis")
-outdir <- file.path(indir, "annotation")
+indir  <- file.path(proj, "03_scRNA/04_clustering")
+outdir <- file.path(proj, "03_scRNA/06_annotation")
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 dpi <- 300
@@ -38,7 +38,7 @@ dpi <- 300
 # Reference files
 equiv_file   <- file.path(proj, "01_reference/all_on_T2T_ref_equivalences_filtered_no_copies_symbols.csv")
 annot_file   <- file.path(proj, "01_reference/5.1_on_T2T_ref_functional_annotation_summary_with_coordinates.tsv")
-markers_file <- file.path(indir, "markers/all_markers.csv")
+markers_file <- file.path(proj, "03_scRNA/05_markers/all_markers.csv")
 
 
 ##=============================================================================

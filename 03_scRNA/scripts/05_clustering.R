@@ -2,7 +2,7 @@
 ## PHASE 5: SCTransform, PCA, clustering, UMAP
 ##
 ## Input:  03_scRNA/03_filtering/VvProt_filtered.rds
-## Output: 03_scRNA/04_analysis/VvProt_clustered.rds + plots
+## Output: 03_scRNA/04_clustering/VvProt_clustered.rds + plots
 ##
 ## Run on TeraStat2: sbatch 05_clustering.slurm
 ##=============================================================================
@@ -24,7 +24,7 @@ theme_pub <- function() {
 # --- Paths ----
 proj   <- "/lustre/home/dcapozzi/projects/scRNA_protoplasts"
 indir  <- file.path(proj, "03_scRNA/03_filtering")
-outdir <- file.path(proj, "03_scRNA/04_analysis")
+outdir <- file.path(proj, "03_scRNA/04_clustering")
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 dpi <- 300
